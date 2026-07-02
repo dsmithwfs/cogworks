@@ -495,6 +495,31 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("15 probe assemblers cost > 1 billion (steep late wall)", p.cost > 1e9);
 })();
 
+// ---------------------------------------------------------------- hard age-gate (prestige required to advance)
+(() => {
+  // Ages I–III are free; IV+ are gated behind total Blueprints earned (a permanent, prestige-only metric).
+  ok("Ages I–III are ungated", E.AGE_REQ[1] === 0 && E.AGE_REQ[2] === 0 && E.AGE_REQ[3] === 0);
+  ok("Ages IV/V/VI require increasing Blueprints", E.AGE_REQ[4] > 0 && E.AGE_REQ[5] > E.AGE_REQ[4] && E.AGE_REQ[6] > E.AGE_REQ[5]);
+
+  // With 0 Blueprints earned, an Age-IV machine can't unlock even if its prereq is built.
+  fresh();
+  E.state.stats.bpEarned = 0;
+  E.state.machines.circuitFab = 5;            // assembler's prereq is satisfied...
+  E.refreshUnlocks(true);
+  ok("Age IV machine stays LOCKED with 0 Blueprints (prereq met)", !E.state.unlocked.assembler);
+  ok("ageUnlocked reflects the gate", E.ageUnlocked(4) === false);
+
+  // After earning enough Blueprints, the same machine unlocks.
+  E.state.stats.bpEarned = E.AGE_REQ[4];
+  E.refreshUnlocks(true);
+  ok("Age IV machine unlocks once the Blueprint threshold is met", !!E.state.unlocked.assembler);
+
+  // A machine already built/unlocked is never re-locked, even below the threshold.
+  fresh();
+  E.state.stats.bpEarned = 0; E.state.unlocked.assembler = true;
+  ok("already-unlocked machines are never re-locked", E.machineUnlocked("assembler") === true);
+})();
+
 // ---------------------------------------------------------------- gross production tracking (▲ readout data source)
 (() => {
   // The ticker's "▲X/s" production number is smoothed from per-tick deltas of stats.made, so the engine
@@ -514,6 +539,104 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   const b2 = E.state.stats.made.ironPlate || 0;
   E.simulate(1, 1);
   ok("production recorded even with a near-full, downstream-drained buffer", ((E.state.stats.made.ironPlate || 0) - b2) > 0);
+})();
+
+// ---------------------------------------------------------------- Age I signature: Prospecting
+(() => {
+  fresh();
+  ok("no vein by default → prospectMult is 1", E.prospectMult() === 1);
+
+  // Mining PROSPECT_MAX times strikes a Rich Vein and resets the meter.
+  fresh();
+  for (let i = 0; i < E.PROSPECT_MAX; i++) E.mine();
+  ok("striking a vein sets the surge timer", E.state.veinLeft === E.VEIN_DUR);
+  ok("meter resets after striking", E.state.prospect === 0);
+  ok("active vein boosts raw extraction", Math.abs(E.prospectMult() - (1 + E.VEIN_BONUS)) < 1e-9);
+
+  // The surge multiplies tier-0 (raw) output but NOT higher tiers.
+  fresh();
+  E.state.veinLeft = E.VEIN_DUR;
+  E.state.machines.miner = 10;                 // tier 0 → boosted
+  E.simulate(1, 1);
+  ok("vein lifts raw miner output ~+50%", E.state.items.ironOre > 14.9 && E.state.items.ironOre < 15.1);
+
+  fresh();
+  E.state.veinLeft = E.VEIN_DUR;
+  E.state.machines.ironFurnace = 10; E.state.items.ironOre = 1000; E.state.items.coal = 1000;  // tier 1 → NOT boosted
+  E.simulate(1, 1);
+  ok("vein does NOT boost non-raw (tier-1) output", E.state.items.ironPlate > 9.9 && E.state.items.ironPlate < 10.1);
+})();
+
+// ---------------------------------------------------------------- Age II signature: Overclock
+(() => {
+  fresh();
+  ok("overclock off by default", !E.overclockOn() && E.ocSpeed() === 1 && E.ocInput() === 1);
+
+  // Baseline: a fed Gear Press makes 1 gear/s from 2 plates/s.
+  fresh();
+  E.state.unlocked.gearPress = true; E.state.machines.gearPress = 1; E.state.items.ironPlate = 1000;
+  E.simulate(1, 1);
+  const baseOut = E.state.items.gear, basePlate = 1000 - E.state.items.ironPlate;
+  ok("baseline gear press: 1 gear/s from 2 plate/s", Math.abs(baseOut - 1) < 1e-6 && Math.abs(basePlate - 2) < 1e-6);
+
+  // Overclocked: +50% throughput AND +50% input per cycle → 1.5 gears/s from 4.5 plate/s.
+  fresh();
+  E.state.overclock = true;
+  E.state.unlocked.gearPress = true; E.state.machines.gearPress = 1; E.state.items.ironPlate = 1000;
+  E.simulate(1, 1);
+  const ocOut = E.state.items.gear, ocPlate = 1000 - E.state.items.ironPlate;
+  ok("overclock lifts throughput +50%", Math.abs(ocOut - 1.5) < 1e-6);
+  ok("overclock burns +50% input per cycle (2 × 1.5 × 1.5 = 4.5)", Math.abs(ocPlate - 4.5) < 1e-6);
+  ok("net effect is worse material efficiency (more plate per gear)", (ocPlate / ocOut) > (basePlate / baseOut));
+
+  // Persists across a save/load (migrate).
+  const saved = E.defaultState(); saved.overclock = true;
+  ok("overclock persists through migrate", E.migrate(JSON.parse(JSON.stringify(saved))).overclock === true);
+})();
+
+// ---------------------------------------------------------------- Age VI: Von Neumann Fleet (endgame idle engine)
+(() => {
+  fresh();
+  ok("no fleet → no bonus, no cap", E.fleetBonus() === 0 && E.fleetCap() === 0);
+
+  // Launching probes moves them into the fleet and raises the cap.
+  fresh();
+  E.state.items.probe = 30;
+  E.launchProbes(20);
+  ok("launching consumes probes", Math.abs(E.state.items.probe - 10) < 1e-6);
+  ok("launched probes join the fleet", E.state.fleet === 20 && E.state.launched === 20);
+  ok("fleet cap = launched × FLEET_CAP_MULT", E.fleetCap() === 20 * E.FLEET_CAP_MULT);
+  ok("fleet grants a production bonus", E.fleetBonus() > 0);
+  ok("fleet feeds globalRate", E.globalRate() > 1 + 1e-9);
+
+  // Fleet self-replicates toward the cap over time (logistic), but never exceeds it.
+  fresh();
+  E.state.items.probe = 100; E.launchProbes(100);   // fleet 100, cap 2000
+  const f0 = E.state.fleet;
+  for (let i = 0; i < 60; i++) E.simulate(1, 1);     // 60s of replication
+  ok("fleet self-replicates (grows) over time", E.state.fleet > f0);
+  ok("fleet never exceeds its cap", E.state.fleet <= E.fleetCap() + 1e-6);
+
+  // Fleet is permanent — survives a save/load (migrate).
+  const saved = E.defaultState(); saved.fleet = 500; saved.launched = 40;
+  const loaded = E.migrate(JSON.parse(JSON.stringify(saved)));
+  ok("fleet + launched persist through migrate", loaded.fleet === 500 && loaded.launched === 40);
+})();
+
+// ---------------------------------------------------------------- Ages roadmap
+(() => {
+  ok("a signature is labelled for every age", E.AGE_SIG.slice(1).every(s => s && s.length));
+
+  // Fresh (0 Blueprints): the roadmap lists all six ages and flags the gated ones as locked.
+  fresh();
+  const html = E.ageRoadmap();
+  ok("roadmap names all six ages", [1,2,3,4,5,6].every(a => html.includes(E.AGES[a].n)));
+  ok("roadmap shows a lock for gated ages at 0 Blueprints", html.includes("🔒 locked"));
+  ok("roadmap surfaces the Blueprint gate cost", html.includes(String(E.AGE_REQ[6])));
+
+  // With Age IV's threshold met, it's no longer shown as locked at that tier.
+  fresh(); E.state.stats.bpEarned = E.AGE_REQ[6];   // everything unlocked
+  ok("roadmap has no locks once all ages are unlocked", !E.ageRoadmap().includes("🔒 locked"));
 })();
 
 // ---------------------------------------------------------------- summary

@@ -234,6 +234,12 @@
         <span class="muted" style="font-size:12px">Bootstrap by mining &amp; selling ore. Sell any resource from its chip (the “$”).</span>
         <button class="b mk" id="autoToggle" style="display:none;margin-left:auto;max-width:200px"></button>
         <button class="b mk" id="autoBalanceToggle" style="display:none;max-width:210px"></button>
+        <button class="b mk" id="overclockToggle" style="display:none;max-width:200px"></button>
+      </div>
+      <div class="toolrow" id="prospectRow" style="margin-top:7px;align-items:center;gap:8px">
+        <span style="font-size:12px" title="Age I signature — Prospecting">🪨 Prospect</span>
+        <div class="bar" id="prospectBar" style="flex:0 0 150px;height:8px"></div>
+        <span class="muted" style="font-size:12px" id="prospectHint"></span>
       </div>
     </div>
 
@@ -250,6 +256,21 @@
         <button class="b mk" id="wfDeployMax" style="max-width:120px">Deploy Max</button>
         <button class="b" id="wfRecall" style="max-width:110px">Recall All</button>
         <span class="muted" style="font-size:12px" id="wfHint"></span>
+      </div>
+    </div>
+
+    <div class="panel" id="fleetPanel" style="display:none">
+      <h2>🛰️ Von Neumann Fleet <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age VI signature. Launch Probes into a self-replicating fleet that colonizes for a permanent production boost. It grows on its own (even offline), up to a cap you raise by launching more.</span></h2>
+      <div class="toolrow">
+        <span class="kv" style="min-width:150px">Fleet <b id="fleetSize" style="margin-left:6px">0</b> <span class="muted" id="fleetCapTxt"></span></span>
+        <span class="kv" style="min-width:170px">Production <b id="fleetBonus" style="margin-left:6px">+0%</b></span>
+        <span class="kv" style="min-width:150px">Replicating <b id="fleetRep" style="margin-left:6px">—</b></span>
+      </div>
+      <div class="toolrow" style="margin-top:6px">
+        <button class="b mk" id="launch1" style="max-width:100px">Launch 1</button>
+        <button class="b mk" id="launch10" style="max-width:100px">Launch 10</button>
+        <button class="b mk" id="launchMax" style="max-width:120px">Launch Max</button>
+        <span class="muted" style="font-size:12px" id="fleetHint"></span>
       </div>
     </div>
 
@@ -385,7 +406,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.24.0";
+const VERSION = "0.29.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -419,6 +440,11 @@ const AGE_GOALS = [ null,
   {item:"robot",     n:200,  eff:{prod:.30}, desc:"Build 200 Robots"},
   {item:"probe",     n:20,   eff:{bp:.5},    desc:"Launch 20 Von Neumann Probes"},
 ];
+// Hard age-gate: an age's machines stay LOCKED until you've earned this many 📐 Blueprints TOTAL
+// (a permanent, prestige-only metric). Ages I–III are free; IV+ require Restructuring to advance —
+// this is what makes prestige mandatory. Already-built machines are never re-locked. (index = age)
+const AGE_REQ = [0, 0, 0, 0, 3, 15, 50];
+const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet"];  // per-age signature label (for the roadmap)
 
 // id: [name, icon, tier, storageCap, sellValue]
 const ITEMS = {
@@ -683,14 +709,16 @@ function freshRun(s){
   s.age = 1;                                        // current age resets each run; maxAge persists
   s.deployed = 0;                                   // Robotic-age workforce (per-run)
   s.accumulators = 0; s.charge = 0;                 // Industrial-age power buffer (per-run)
+  s.prospect = 0; s.veinLeft = 0;                   // Stone-age Prospecting: charge → Rich Vein surge (per-run)
   let ks=0; for(const id in (s.allocated||{})){ const n=NODES[id]; if(n && n.eff.kick) ks+=n.eff.kick; }
   if(ks>0){ s.warehouses+=ks; s.machines.miner+=3*ks; s.machines.ironFurnace+=2*ks; s.credits+=500*ks; }
 }
 function defaultState(){
   const s = {version:VERSION, lastSaved:Date.now(), blueprints:0, lifetimeCredits:0, prestiges:0,
     allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}},
-    auto:{}, autoOn:true, autoBalance:false, talentPoints:0, talents:{}, tpClaimed:0,
-    patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false};
+    auto:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
+    patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
+    fleet:0, launched:0};   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
   freshRun(s);
   return s;
 }
@@ -718,7 +746,7 @@ function recomputeStats(){
   statCache=s;
 }
 const st = k => statCache[k]||0;
-const globalRate   = () => 1 + st("prod");
+const globalRate   = () => 1 + st("prod") + fleetBonus();   // fleet's colonization dividend feeds production live
 const inputEff     = () => Math.max(0.4, 1 - st("input"));
 const rawEff       = () => Math.max(0.2, 1 - st("rawcost"));   // extra reduction on tier-0 (raw) inputs
 const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
@@ -728,6 +756,19 @@ const mkDiscount   = () => Math.max(0.4, 1 - st("mkcost"));
 const offlineEff   = () => Math.min(1, 0.5 + st("offeff"));
 const offlineCap   = () => (4 + st("offcap")) * 3600;
 const orePerClick  = () => 1 + Math.floor(state.prestiges/2) + st("click");
+// Stone-age signature — Prospecting: manual mining charges a meter; striking a Rich Vein surges raw extraction.
+const PROSPECT_MAX = 20, VEIN_DUR = 30, VEIN_BONUS = 0.5;
+const prospectMult = () => 1 + (state.veinLeft>0 ? VEIN_BONUS : 0);   // ×raw extraction while a vein is active
+// Machine-age signature — Overclock: run every machine faster, but burn more input per cycle (speed vs efficiency).
+const OC_SPEED = 1.5, OC_INPUT = 1.5;
+const overclockOn = () => !!state.overclock;
+const ocSpeed = () => overclockOn() ? OC_SPEED : 1;                   // ×throughput while overclocked
+const ocInput = () => overclockOn() ? OC_INPUT : 1;                   // ×input consumed per cycle
+// Space-age signature / endgame idle engine — the Von Neumann Fleet. Launch Probes → a self-replicating fleet
+// (logistic growth toward a cap you raise by launching more) that grants a permanent, log-diminishing prod boost.
+const FLEET_CAP_MULT = 20, FLEET_REPLICATE = 0.03, FLEET_MULT = 0.15;
+const fleetCap   = () => (state.launched||0) * FLEET_CAP_MULT;
+const fleetBonus = () => FLEET_MULT * Math.log10(1 + (state.fleet||0));   // +production (colonies send back resources)
 const capOf        = id => Math.floor(ITEMS[id].cap * capMult());
 const mkMult       = id => 1 + 0.5*(state.mk[id]||0);
 const bpFor        = rc => Math.floor(Math.pow(Math.max(0,rc)/PRESTIGE_SCALE, 0.6) * (1 + st("bp")));
@@ -781,8 +822,10 @@ function pay(cr, bom){ state.credits-=cr; for(const r in (bom||{})) state.items[
 /* =========================================================================
    UNLOCKS (progressive tech path)
    ========================================================================= */
+const ageUnlocked = age => (state.stats.bpEarned||0) >= AGE_REQ[age];   // prestige-gated: earn Blueprints to advance
 function machineUnlocked(key){
   if(state.unlocked[key]) return true;
+  if(!ageUnlocked(TIER_AGE[MACHINES[key].t])) return false;   // hard age-gate (must prestige)
   const req = MACHINES[key].unlock;
   if(!req) { state.unlocked[key]=true; return true; }
   for(const m in req) if((state.machines[m]||0) < req[m]) return false;
@@ -791,6 +834,7 @@ function machineUnlocked(key){
 function refreshUnlocks(silent){
   for(const key of MORDER){
     if(state.unlocked[key]) continue;
+    if(!ageUnlocked(TIER_AGE[MACHINES[key].t])) continue;     // age-gated: prereqs alone aren't enough
     const req = MACHINES[key].unlock;
     let ok = !req;
     if(req){ ok=true; for(const m in req){ if((state.machines[m]||0) < req[m]){ ok=false; break; } } }
@@ -854,14 +898,14 @@ function computePower(dt){
 }
 function simulate(dt, eff){
   const gr = globalRate(), ie = inputEff(), re = rawEff(), mm = marketMult();
-  const inF = r => m.in[r] * ie * (ITEMS[r].t===0 ? re : 1);   // per-input amount (raw gets extra cut)
+  const inF = r => m.in[r] * ie * (ITEMS[r].t===0 ? re : 1) * ocInput();   // per-input amount (raw cut; overclock burns more)
   const pr = computePower(dt);                       // power throttles every consumer proportionally
   var m;
   for(const key of MORDER){
     if(!state.unlocked[key]) continue;
     m = MACHINES[key]; const count = state.machines[key]||0;
     if(count<=0) continue;
-    let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * pr * dt;
+    let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * (m.t===0 ? prospectMult() : 1) * ocSpeed() * pr * dt;
     for(const r in m.in){ cyc=Math.min(cyc, (state.items[r]||0)/inF(r)); }
     for(const r in m.out){ const space=capOf(r)-(state.items[r]||0); cyc=Math.min(cyc, space/m.out[r]); }
     cyc *= eff;
@@ -869,6 +913,9 @@ function simulate(dt, eff){
     for(const r in m.in)  state.items[r] -= inF(r)*cyc;
     for(const r in m.out){ const add=m.out[r]*cyc; state.items[r]+=add; state.stats.produced+=add; state.stats.made[r]=(state.stats.made[r]||0)+add; }
   }
+  // Von Neumann Fleet self-replicates (logistic) toward the cap set by how many probes you've launched — runs offline too.
+  if((state.fleet||0)>0){ const fc=fleetCap();
+    if(fc>0 && state.fleet<fc) state.fleet=Math.min(fc, state.fleet + state.fleet*FLEET_REPLICATE*(1-state.fleet/fc)*dt); }
   // Trade terminals auto-sell: either one chosen item, or "overstock" (surplus above OVERSTOCK_KEEP of each cap)
   if(state.markets>0){
     const thru = state.markets * MARKET.rate * (1+0.5*state.marketMk) * gr * dt;
@@ -933,6 +980,7 @@ let lastReal = Date.now();
 function tick(){
   const now=Date.now(); let dt=(now-lastReal)/1000; lastReal=now;
   if(dt<0)dt=0; if(dt>5)dt=5;
+  if(state.veinLeft>0) state.veinLeft=Math.max(0, state.veinLeft-dt);   // Prospecting: expire the Rich Vein surge
   const before={credit:state.credits}; for(const k in ITEMS) before[k]=state.items[k];
   const madeBefore={}; for(const k in ITEMS) madeBefore[k]=state.stats.made[k]||0;
   simulate(dt,1);
@@ -1015,7 +1063,15 @@ function ensureMachines(){
   let html="";
   for(let age=1;age<=6;age++){
     const keys=MORDER.filter(k=>TIER_AGE[MACHINES[k].t]===age && state.unlocked[k]);
-    if(!keys.length) continue;
+    if(!keys.length){
+      // Age-gated frontier: show a visible lock and stop (higher ages are locked too).
+      if(!ageUnlocked(age) && AGE_REQ[age]>0){
+        html+=`<div class="tier-h" style="opacity:.75">🔒 ${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n} — locked</div>
+          <div class="st" style="padding:7px 10px;line-height:1.55">Earn <b>${AGE_REQ[age]} 📐 Blueprints</b> in total to unlock this age's machines — <b>♻ Restructure</b> and spend in the tree to progress. <span class="muted">(earned so far: ${fmt(state.stats.bpEarned||0)} 📐)</span></div>`;
+        break;
+      }
+      continue;
+    }
     html+=`<div class="tier-h">${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n}</div>`;
     for(const k of keys){
       const m=MACHINES[k];
@@ -1167,6 +1223,12 @@ function updateUI(){
   el("income").innerHTML=rateStr(rate.credit);
   el("bp").textContent=fmt(state.blueprints);
   el("clickAmt").textContent="+"+fmt(orePerClick());
+  { const vein=state.veinLeft>0;
+    el("prospectBar").style.width=Math.min(100,(vein?1:(state.prospect||0)/PROSPECT_MAX)*100)+"%";
+    el("prospectBar").style.background=vein?"var(--good)":"var(--accent)";
+    el("prospectHint").innerHTML=vein
+      ? `<span class="pos">⚡ Rich Vein: +${Math.round(VEIN_BONUS*100)}% raw extraction · ${Math.ceil(state.veinLeft)}s</span>`
+      : `Mine to strike a Rich Vein (${fmt(state.prospect||0)}/${PROSPECT_MAX})`; }
   el("objective").innerHTML="🎯 "+currentObjective();
   { const ca=currentAge(), A=AGES[ca], g=AGE_GOALS[ca];
     const rec = state.maxAge>ca ? `record: Age ${ROMAN[state.maxAge]}` : (ca<6 ? `next: Age ${ROMAN[ca+1]}` : "max age");
@@ -1174,7 +1236,7 @@ function updateUI(){
     if(g){ goal = state.ageGoals[ca]
       ? `<span class="pos" style="font-size:12px">· 🏆 age mastered</span>`
       : `<span class="muted" style="font-size:12px">· 🏆 ${g.desc}: ${fmt(Math.floor(state.stats.made[g.item]||0))}/${fmt(g.n)}</span>`; }
-    el("agebar").innerHTML=`${A.ic} <b>Age ${ROMAN[ca]} — ${A.n}</b> ${goal}<span class="rec">${rec}</span>`; }
+    el("agebar").innerHTML=`${A.ic} <b>Age ${ROMAN[ca]} — ${A.n}</b> ${goal}<span class="rec">${rec} · 🗺️ roadmap</span>`; }
   { const showWF=(state.maxAge>=5)||(state.deployed>0)||((state.items.robot||0)>=1);
     el("workforcePanel").style.display=showWF?"":"none";
     if(showWF){ const avail=Math.floor(state.items.robot||0);
@@ -1187,6 +1249,16 @@ function updateUI(){
         : `${fmt(avail)} robot${avail===1?"":"s"} available to deploy`;
       el("wfDeploy1").disabled=avail<1; el("wfDeploy10").disabled=avail<1; el("wfDeployMax").disabled=avail<1;
       el("wfRecall").disabled=(state.deployed||0)<1;
+    } }
+  { const showF=(state.maxAge>=6)||(state.fleet>0)||((state.items.probe||0)>=1);
+    el("fleetPanel").style.display=showF?"":"none";
+    if(showF){ const avail=Math.floor(state.items.probe||0), fc=fleetCap(), atCap=state.fleet>=fc-1e-6 && fc>0;
+      el("fleetSize").textContent=fmt(state.fleet||0);
+      el("fleetCapTxt").textContent=fc>0?`/ ${fmt(fc)}`:"";
+      el("fleetBonus").textContent="+"+Math.round(fleetBonus()*100)+"%";
+      el("fleetRep").innerHTML=(state.fleet>0 && !atCap)?`<span class="pos">▲ growing</span>`:(atCap?`<span class="muted">at cap — launch more</span>`:`—`);
+      el("fleetHint").textContent=avail>=1?`${fmt(avail)} probe${avail===1?"":"s"} ready to launch`:(state.fleet>0?`Fleet colonizing — build & launch more probes to raise the cap`:`Build Probes, then launch them`);
+      el("launch1").disabled=avail<1; el("launch10").disabled=avail<1; el("launchMax").disabled=avail<1;
     } }
 
   ensureTicker(); ensureMachines(); ensureMarketSel(); ensureGenerators(); ensureAchievements(); ensureTalents();
@@ -1202,11 +1274,17 @@ function updateUI(){
     // Using net (not a raw fill %) makes this robust to tick rate and to the consume/refill wobble.
     const full = amt>=cap-1e-6 || (fill>=0.9 && Math.abs(net) < Math.max(0.5, gp*0.3));
     el("amt-"+id).textContent=fmt(full?cap:amt);    // snap to cap when full → no last-digit jitter
-    // Lead with GROSS production (stable, answers "how much am I making"); fall back to net drain for consumed items.
-    el("rate-"+id).innerHTML =
-      gp>0.01   ? `<span class="pos">▲${fmt(gp)}/s</span>`+(full?` <span class="muted">· full</span>`:``)
-      : net<-0.01 ? rateStr(net)
-      : `<span class="muted">${full?'full':'+0/s'}</span>`;
+    // NET gain is the headline — signed & colored, so "is my stockpile growing?" is obvious at a glance —
+    // with gross production as a small ▲ badge. Net is suppressed only while full/pinned (there it just
+    // jitters around 0), where we show "full" instead.
+    if(full){
+      el("rate-"+id).innerHTML = gp>0.01
+        ? `<span class="pos">▲${fmt(gp)}/s</span> <span class="muted">· full</span>`
+        : `<span class="muted">full</span>`;
+    } else {
+      const netStr = `<b class="${net>0.01?'pos':net<-0.01?'neg':'muted'}">${net>=0?'+':''}${fmt(net)}/s</b>`;
+      el("rate-"+id).innerHTML = gp>0.01 ? `${netStr} <span class="muted">▲${fmt(gp)}/s</span>` : netStr;
+    }
     el("cap-"+id).textContent="/ "+fmt(cap);
     const bar=el("bar-"+id); bar.style.width=Math.min(100,(full?1:fill)*100)+"%";
     const chip=el("amt-"+id).parentElement;         // amt is a direct child of the chip
@@ -1309,6 +1387,10 @@ function updateUI(){
   const abt=el("autoBalanceToggle"), showAB=autoOn && (state.maxAge||1)>=4;
   abt.style.display=showAB?"":"none";
   if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-buy the most-starved machine to keep ratios balanced (Age IV)"; }
+  const oct=el("overclockToggle"), showOC=(state.maxAge||1)>=2;   // Machine-age signature
+  oct.style.display=showOC?"":"none";
+  if(showOC){ oct.classList.toggle("can",state.overclock); oct.innerHTML=`⚡ Overclock: ${state.overclock?"ON":"OFF"}`;
+    oct.title=`Machine Age — run every machine +${Math.round((OC_SPEED-1)*100)}% faster, but each cycle burns +${Math.round((OC_INPUT-1)*100)}% inputs (speed vs material efficiency)`; }
   // talents (only when the Talents tab is visible)
   if(el("tab-talents").classList.contains("on")){
     el("tpCount").textContent="✦ "+fmt(state.talentPoints)+" TP";
@@ -1399,11 +1481,18 @@ function mkMarket(){ if(state.markets<1)return; const cr=marketMkCredits(),bom=m
 function sellAll(id){ const amt=state.items[id]||0; if(amt<=0)return 0;
   const g=amt*ITEMS[id].sell*marketMult(); state.items[id]=0; addCredits(g);
   sessionClicks++; SND.sell(); toast(`Sold ${fmt(amt)} ${ITEMS[id].n} → ${money(g)}`); updateUI(); return g; }
-function mine(){ const cap=capOf("ironOre"), amt=orePerClick(); state.items.ironOre=Math.min(cap,(state.items.ironOre||0)+amt); state.stats.produced+=amt; sessionClicks++; SND.click(); updateUI(); }
+function mine(){ const cap=capOf("ironOre"), amt=orePerClick()*prospectMult(); state.items.ironOre=Math.min(cap,(state.items.ironOre||0)+amt); state.stats.produced+=amt; sessionClicks++;
+  state.prospect=(state.prospect||0)+1;
+  if(state.prospect>=PROSPECT_MAX){ state.prospect=0; state.veinLeft=VEIN_DUR; toast(`🪨 Rich Vein struck! +${Math.round(VEIN_BONUS*100)}% raw extraction for ${VEIN_DUR}s`, "unlock"); SND.goal(); }
+  else SND.click();
+  updateUI(); }
 function deployRobots(n){ const have=Math.floor(state.items.robot||0); n=Math.min(n,have); if(n<=0)return;
   state.items.robot-=n; state.deployed=(state.deployed||0)+n; recomputeStats(); updateUI(); }
 function recallRobots(n){ const space=Math.floor(capOf("robot")-(state.items.robot||0)); n=Math.min(n, state.deployed||0, Math.max(0,space)); if(n<=0)return;
   state.deployed-=n; state.items.robot=(state.items.robot||0)+n; recomputeStats(); updateUI(); }
+function launchProbes(n){ const have=Math.floor(state.items.probe||0); n=Math.min(n,have); if(n<=0)return;
+  state.items.probe-=n; state.launched=(state.launched||0)+n; state.fleet=(state.fleet||0)+n;   // permanent — no recall
+  toast(`🛰️ Launched ${fmt(n)} probe${n===1?'':'s'} — the fleet will self-replicate`, "unlock"); SND.goal(); updateUI(); }
 function doPrestige(){
   const gain=bpFor(state.runCredits); if(gain<1)return;
   openModal(`<h3>♻ Restructure the factory?</h3>
@@ -1448,6 +1537,7 @@ function migrate(s){
   out.auto=Object.assign({}, s.auto||{});
   out.autoOn = (typeof s.autoOn==="boolean") ? s.autoOn : true;
   out.autoBalance = !!s.autoBalance;
+  out.overclock = !!s.overclock;
   out.sound = (typeof s.sound==="boolean") ? s.sound : true;
   out.hud = !!s.hud;
   out.talents = Object.assign({}, s.talents||{});  // preserve purchased talent ranks across reloads
@@ -1459,6 +1549,7 @@ function migrate(s){
   out.patentUpg = Object.assign({}, s.patentUpg||{});
   out.bpCycle = s.bpCycle||0;
   out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
+  out.fleet = s.fleet||0; out.launched = s.launched||0;   // Von Neumann Fleet is permanent
   out.accumulators = s.accumulators||0; out.charge = s.charge||0;
   if(s.research){                                   // refund old flat-research Blueprints into the new tree
     const OLD={automation:[1,1.7],efficiency:[2,1.9],logistics:[1,1.8],market:[1,1.8],massProduction:[2,2.0],
@@ -1496,6 +1587,28 @@ function applyOffline(){
    ========================================================================= */
 function openModal(h){ el("modal").innerHTML=h; el("scrim").classList.add("show"); }
 function closeModal(){ el("scrim").classList.remove("show"); }
+function ageRoadmap(){
+  const ca=currentAge();
+  let rows="";
+  for(let a=1;a<=6;a++){
+    const unlocked=ageUnlocked(a), reached=(state.maxAge||1)>=a, mastered=!!state.ageGoals[a], cur=ca===a, g=AGE_GOALS[a];
+    const status = mastered?`<span class="pos">🏆 mastered</span>` : cur?`<span class="pos">▶ current</span>`
+      : reached?`<span class="muted">✓ reached</span>` : unlocked?`<span class="muted">unlocked</span>` : `<span class="neg">🔒 locked</span>`;
+    const gate = AGE_REQ[a]>0
+      ? `${AGE_REQ[a]} 📐${unlocked?` <span class="pos">✓</span>`:` <span class="muted">(have ${fmt(state.stats.bpEarned||0)})</span>`}`
+      : `<span class="muted">free</span>`;
+    const goalTxt = g ? (mastered?`<span class="pos">🏆 ${g.desc} — done</span>`:`${g.desc} · ${fmt(Math.floor(state.stats.made[g.item]||0))}/${fmt(g.n)}`) : "—";
+    rows += `<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0;${cur?"border-color:var(--accent);":""}${unlocked?"":"opacity:.6;"}">
+      <div><b>${AGES[a].ic} Age ${ROMAN[a]} · ${AGES[a].n}</b> — ${status}</div>
+      <div class="muted" style="font-size:12px;margin:2px 0">${AGES[a].tagline}</div>
+      <div style="font-size:12px"><b>Signature:</b> ${AGE_SIG[a]} &nbsp;·&nbsp; <b>Unlock:</b> ${gate}</div>
+      <div style="font-size:12px"><b>Goal:</b> ${goalTxt}</div></div>`;
+  }
+  return `<h3>🗺️ Ages Roadmap</h3>
+    <p class="muted" style="margin:0 0 4px">Six ages, each gated behind Blueprints — ♻ Restructure to advance. Every age has a signature mechanic and a mastery goal (a permanent reward).</p>
+    ${rows}
+    <div class="rw"><button class="primary" data-close>Close</button></div>`;
+}
 el("scrim").addEventListener("click",e=>{ if(e.target.id==="scrim"||e.target.hasAttribute("data-close")) closeModal(); });
 function toast(msg,cls){ const t=document.createElement("div"); t.className="toast"+(cls?" "+cls:""); t.textContent=msg;
   el("toasts").appendChild(t); setTimeout(()=>{t.style.transition="opacity .4s";t.style.opacity="0";setTimeout(()=>t.remove(),400);},2400); }
@@ -1568,6 +1681,9 @@ function currentObjective(){
   if((m.ironFurnace||0)<1) return "Build a <b>Coal Drill</b> and an <b>Iron Furnace</b> to turn Ore + Coal into Iron Plates.";
   if((m.gearPress||0)<1) return "Stockpile Iron Plates and build a <b>Gear Press</b> to open the tech tree.";
   if((m.circuitFab||0)<1) return "Expand the Copper line + a <b>Steel Mill</b>, then build a <b>Circuit Fab</b>.";
+  { const locked=[4,5,6].find(a=>!ageUnlocked(a));   // hard age-gate: prestige to advance past a locked age
+    if(locked!==undefined && currentAge()>=locked-1)
+      return `${AGES[locked].ic} <b>Age ${ROMAN[locked]} is locked</b> — earn <b>${AGE_REQ[locked]} 📐 Blueprints</b> total (you have ${fmt(state.stats.bpEarned||0)}). <b>♻ Restructure</b> and spend in 🌳 Advancements to unlock it.`; }
   if((m.assembler||0)<1) return "Build an <b>Assembler</b> to craft Mechanisms — the gateway to Robotics.";
   if(state.prestiges<1 && state.runCredits<PRESTIGE_SCALE) return `Grow income to <b>${money(PRESTIGE_SCALE)}</b> this run, then <b>♻ Restructure</b> for Blueprints.`;
   if(state.prestiges<1) return "You can <b>♻ Restructure</b> now for your first Blueprints — spend them in 🌳 Advancements.";
@@ -1578,6 +1694,12 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.29.0","🗺️ Ages Roadmap. Click the age bar (top of the Factory tab) to open a map of all six ages — each showing its status (mastered / current / locked), the Blueprints needed to unlock it, its signature mechanic, and its mastery goal with your progress. Makes the whole gated journey legible: you can see exactly what's ahead and what it'll take to get there."],
+  ["0.28.0","Age VI signature + endgame engine — 🛰️ the Von Neumann Fleet. Reach the Space Age and you can Launch your Probes into a permanent fleet that self-replicates on its own — even while you're away — colonizing for a growing, permanent production boost. The fleet grows toward a cap you raise by launching more probes, so there's always a reason to keep building them. It survives Restructures and every reset, so finishing the climb finally pays off with an endless idle engine that carries across all future runs. Every age now has its own signature mechanic."],
+  ["0.27.0","Age II signature — ⚡ Overclock. Once you reach the Machine Age, a toggle in the Manual panel lets you run EVERY machine +50% faster — but each cycle burns +50% more input, so it trades material efficiency for raw speed. Worth flipping on when you've got materials to spare, a trap when they're your bottleneck. It's power-neutral (distinct from the later power-based signatures) and persists across Restructures."],
+  ["0.26.0","Age I signature — 🪨 Prospecting. Hand-mining now charges a Prospect meter; fill it (20 clicks) to strike a Rich Vein — a 30-second +50% surge to ALL raw extraction (miners, drills, quarries, and your manual mining). It's optional (idle players can ignore it), but rewards hands-on early play and gives the Stone & Iron Age its own hook. First of a pass giving every age a signature mechanic."],
+  ["0.25.1","Resource chips now show your net gain front-and-center: a bold, signed, color-coded rate (green when your stockpile is growing, red when it's shrinking) with your gross production as a small ▲ badge beside it. Full buffers still read a stable 'full' instead of flickering. So you can tell at a glance whether each item is piling up or draining."],
+  ["0.25.0","Hard age-gates — prestige is now a real lock, not just a cost. Ages I–III are free, but Age IV (Automation) and beyond stay LOCKED until you've earned enough Blueprints in total: 3 for Age IV, 15 for Age V, 50 for Age VI. So you can't reach robots/probes on a single run anymore — you have to ♻ Restructure and spend Blueprints to advance. The Factory tab shows a clear 🔒 banner for the next locked age, and the objective bar points you to prestige. Machines you've already built are never re-locked. (Thresholds are first-pass — will tune with playtesting.)"],
   ["0.24.0","Major rebalance (pass 1 of a longer game): prestige is now required to reach the endgame. High-tier machines cost exponentially more per copy (scaling steepens by tier, up to ×1.55 each at the Singularity tier), so a single run now hits a wall you can only push past by Restructuring and spending Blueprints. To stop the late game from being a runaway money-printer, top-tier items now sell for far less (they're the goal, not a cash crop — e.g. Probes 150K→2.5K, AI Cores 15K→900); your credit income now comes from selling the abundant mid-tier materials you overproduce. Early and mid game are largely unchanged. (More depth per age is coming next.)"],
   ["0.23.1","Clearer resource readouts. Each resource chip now shows how much you're actually producing (▲ gross output/s) instead of only the net change — so a full or fully-consumed item no longer just reads ~0. Full buffers now display a stable amount with a 'full' tag instead of jittering, and hovering a chip shows both production and net rate. (Also fixed a long-standing bug where the 'full' highlight was applied to the wrong element.)"],
   ["0.23.0","Longer late game + Workforce rebalance. Deployed Robots now draw grid power (~0.5 MW each), so a big workforce needs real generators — fielding thousands of robots for free is out; it's now a genuine power investment that self-limits (linear power cost vs √ production benefit). The Robotics/Singularity chain (Assembler → Chip Fab → Robotics Lab → Robot Assembler → AI Foundry → Probe Assembler) also costs more up front and scales steeper per copy, so reaching and mass-producing robots is a longer, more deliberate haul."],
@@ -1656,10 +1778,14 @@ function wire(){
     else if(b) buildGenerator(b.dataset.gen); });
   el("autoToggle").addEventListener("click",()=>{ state.autoOn=!state.autoOn; updateUI(); });
   el("autoBalanceToggle").addEventListener("click",()=>{ state.autoBalance=!state.autoBalance; updateUI(); });
+  el("overclockToggle").addEventListener("click",()=>{ state.overclock=!state.overclock; updateUI(); });
   el("wfDeploy1").addEventListener("click",()=>deployRobots(1));
   el("wfDeploy10").addEventListener("click",()=>deployRobots(10));
   el("wfDeployMax").addEventListener("click",()=>deployRobots(Math.floor(state.items.robot||0)));
   el("wfRecall").addEventListener("click",()=>recallRobots(state.deployed||0));
+  el("launch1").addEventListener("click",()=>launchProbes(1));
+  el("launch10").addEventListener("click",()=>launchProbes(10));
+  el("launchMax").addEventListener("click",()=>launchProbes(Math.floor(state.items.probe||0)));
   el("buildAcc").addEventListener("click",buildAccumulator);
   el("talents").addEventListener("click",e=>{ const b=e.target.closest("[data-talent]"); if(b) upgradeTalent(b.dataset.talent); });
   el("patentBody").addEventListener("click",e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });
@@ -1674,6 +1800,8 @@ function wire(){
     updateUI(); });
 
   el("btnSave").addEventListener("click",()=>{save();toast("Saved.");});
+  el("agebar").style.cursor="pointer"; el("agebar").title="View the Ages roadmap";
+  el("agebar").addEventListener("click",()=>openModal(ageRoadmap()));
   el("btnChangelog").addEventListener("click",()=>openModal(
     `<h3>📜 Changelog</h3><ul>${CHANGELOG.map(c=>`<li><b>v${c[0]}</b> — ${c[1]}</li>`).join("")}</ul>
      <div class="rw"><button class="primary" data-close>Close</button></div>`));

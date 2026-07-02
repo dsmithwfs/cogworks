@@ -33,13 +33,16 @@ const EXPORTS = [
   "fuelMult", "demandMult",
   "planBuild", "scaleBOM", "buildBOM", "planMachine", "planGenerator", "planWarehouse", "planMarket",
   "mkCredits", "mkBOM", "marketMkCredits", "marketMkBOM", "canAfford", "pay",
-  "machineUnlocked", "refreshUnlocks", "itemUnlocked", "genUnlocked",
+  "machineUnlocked", "refreshUnlocks", "itemUnlocked", "genUnlocked", "AGE_REQ", "ageUnlocked", "AGE_SIG", "ageRoadmap",
   "simulate", "computePower", "addCredits",
   "checkMilestones", "grantTP", "earnedTP",
   "talentCost", "talentSpent", "tierUnlocked",
   "PATENTS", "PATENT_UNLOCK", "PATENT_SCALE", "patentCost", "patentAvailable", "patentsUnlocked",
   "AGES", "TIER_AGE", "TIER_MULT", "ROMAN", "currentAge", "workforceBonus", "deployRobots", "recallRobots",
   "WORKFORCE_MW", "workforceDraw",
+  "PROSPECT_MAX", "VEIN_DUR", "VEIN_BONUS", "prospectMult", "mine",
+  "OC_SPEED", "OC_INPUT", "overclockOn", "ocSpeed", "ocInput",
+  "FLEET_CAP_MULT", "FLEET_REPLICATE", "FLEET_MULT", "fleetCap", "fleetBonus", "launchProbes",
   "ACCUMULATOR", "planAccumulator", "autoBuild", "AGE_GOALS", "checkAgeGoals", "SND", "bottleneck", "chainHealth",
 ];
 

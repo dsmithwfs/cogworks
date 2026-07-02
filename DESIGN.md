@@ -244,10 +244,18 @@ blueprints = floor( (creditsEarnedThisRun / 10000) ^ 0.6 × (1 + bp-stat from tr
 the tree). Enabled once a run would yield ≥1 (~15–20 min for a first prestige). Loop-pacing is
 validated in `test/loops.js` (meta reinvestment ≈1.8× faster than not spending, and widening).
 
-### 9a. The prestige wall (v0.24.0 — target ~30h full playthrough)
+### 9a. The prestige wall (v0.24.0–0.25.0 — target ~30h full playthrough)
 
-Prestige is **mandatory**, not optional. Two coordinated levers stop a single run from
+Prestige is **mandatory**, not optional. Three coordinated levers stop a single run from
 brute-forcing the endgame:
+
+0. **Hard age-gate (v0.25.0)** — `AGE_REQ = [0,0,0,0,3,15,50]`: an age's machines stay **locked**
+   until you've earned that many 📐 Blueprints *in total* (`stats.bpEarned`, a permanent
+   prestige-only metric). Ages I–III are free; **Age IV needs 3 BP, V needs 15, VI needs 50** — so
+   you literally cannot unlock robots/probes without Restructuring. Enforced in `machineUnlocked`
+   /`refreshUnlocks` (`ageUnlocked(age)`); already-built machines are never re-locked. The Factory
+   tab shows a 🔒 banner for the next locked age and the objective bar points to prestige. This is
+   the *visible, legible* wall; the two below are the economic pressure that makes it bite.
 
 1. **Exponential cost by tier** (`TIER_MULT`, §5): each machine's per-copy cost scales harder the
    higher its tier (1.15 → 1.55). Late machines get astronomically expensive to stack — e.g. 15
@@ -367,10 +375,11 @@ The endgame layer *above* Blueprints. Unlocks once you've earned **15 Blueprints
 
 Top bar (Credits +/s · Blueprints · **⚡ Power %** · **🔊 sound** · **📊 HUD** · Restructure) → tab nav → **objective bar**
 (your current goal) → always-visible resource ticker (amount / cap, flow rate, fill bar, "$" sell).
-Each chip leads with **gross production** (`▲X/s` — how much you're actually making, smoothed from
-`stats.made` deltas), falling back to net drain for consumed-only items; a buffer pinned at cap shows a
-stable amount + a `full` tag (no jitter), and hovering reveals both production and net. Reading the flow
-this way makes bottlenecks legible even when net ≈ 0.
+Each chip leads with **net gain** (a bold, signed, colour-coded `±X/s` — green growing / red draining,
+so "is my stockpile piling up?" is obvious), with **gross production** as a small `▲X/s` badge (how much
+you're actually making, smoothed from `stats.made` deltas). A buffer pinned at cap shows a stable amount +
+a `full` tag with production (net is suppressed there — it only jitters around 0); hover reveals both.
+Reading net + production together makes bottlenecks legible even when net ≈ 0.
 
 **Session HUD** (📊 top-bar button or the `` ` `` key) — a lightweight, always-on-top playtest
 overlay that instruments a live run: session time, current Age, income/min, power % + accumulator
@@ -389,6 +398,9 @@ off by default, and reads live state without perturbing it.
 - **🎯 Talents** — tier-grouped ranked talents spent with Talent Points (efficiency/cost cuts).
 - **⚛ Patents** — File Patent (deep reset) + permanent patent upgrades (locked until 50 BP earned).
 - **📊 Stats** — totals, the **Achievements** grid, offline info, Save/Export/Import/Changelog/Hard-reset.
+- **🗺️ Ages Roadmap** — click the age bar to open a modal (`ageRoadmap()`) listing all six ages with
+  status (mastered/current/reached/unlocked/locked), Blueprint unlock cost (`AGE_REQ`), signature
+  (`AGE_SIG`), and goal progress. Makes the hard-gated ladder (§9a) legible and aspirational.
 
 ---
 
@@ -400,12 +412,12 @@ the Factory tab, with an **age banner** up top.
 
 | Age | Tiers | Signature |
 |---|---|---|
-| I · Stone & Iron | Extraction + Smelting | the crafting chain + manual bootstrap |
-| II · Machine | Basic Components | machines built from a bill-of-materials |
+| I · Stone & Iron | Extraction + Smelting | **Prospecting** — mine to strike Rich Veins (raw-extraction surge) |
+| II · Machine | Basic Components | **Overclock** — +50% speed for +50% input (speed vs efficiency) |
 | III · Industrial | Advanced Components | the Power grid + **Accumulators** (Phase 2) |
 | IV · Automation | Complex Assemblies | the Auto-Builder + **Auto-Balance** (Phase 2) |
 | V · Robotic | Robotics | **Workforce** — deploy Robots as workers (Phase 2) |
-| VI · Space | Singularity Tech | AI Cores, Von Neumann Probes, infinite Patents |
+| VI · Space | Singularity Tech | **Von Neumann Fleet** — launch Probes → a self-replicating idle engine (+ infinite Patents) |
 
 - **`currentAge`** = the highest age you've built a machine in this run; **`maxAge`** = the
   highest ever reached (latched, persists through Restructure *and* File Patent).
@@ -417,6 +429,28 @@ the Factory tab, with an **age banner** up top.
   before. This is why Ages and prestige reinforce rather than fight each other.
 - Deepening happens **one age at a time** (each can gain a signature mechanic, a wider chain,
   and an age goal) — the incremental content pipeline.
+
+**Phase 2 — Space-Age signature + endgame engine: the Von Neumann Fleet (v0.28.0).** Launch `probe`
+items into a **permanent** fleet (`launchProbes`; survives Restructure *and* Patents). The fleet
+**self-replicates logistically** in `simulate` — `fleet += fleet·FLEET_REPLICATE·(1−fleet/cap)·dt` — so
+it grows on its own (offline too) toward `fleetCap = launched·FLEET_CAP_MULT` (20). Launching more probes
+raises the cap → always a reason to keep building them (endless, but governed by your probe output). It
+grants a permanent, **log-diminishing production boost** `fleetBonus = FLEET_MULT·log10(1+fleet)` folded
+live into `globalRate()`. This is the payoff for finishing the ~30h climb: an idle engine that compounds
+across every future run. Numbers stay sane via the cap + log benefit. *(All six ages now have a signature.)*
+
+**Phase 2 — Machine-Age signature: Overclock (v0.27.0).** A toggle (shown once `maxAge ≥ 2`) that runs
+**every machine ×`OC_SPEED` (1.5) throughput** while multiplying **input consumed per cycle by `OC_INPUT`
+(1.5)** — so `+50%` output costs `+50%` input *per cycle*, i.e. worse material efficiency (`ocSpeed()` on
+`cyc`, `ocInput()` folded into `inF` in `simulate`). Deliberately **power-neutral** to stay distinct from
+the power-based signatures (Accumulators/Workforce); the decision axis is *material surplus*, not grid. A
+persistent preference (survives Restructure). Speed when you can afford the waste; efficiency when you can't.
+
+**Phase 2 — Stone-Age signature: Prospecting (v0.26.0).** Manual mining charges a Prospect meter
+(`PROSPECT_MAX = 20` clicks); filling it strikes a **Rich Vein** — `VEIN_DUR = 30`s of `+VEIN_BONUS`
+(50%) to **all raw (tier-0) extraction** and hand-mining (`prospectMult()` multiplies tier-0 output in
+`simulate`, and `orePerClick`). Per-run (resets on Restructure). It's optional upside that rewards active
+early play and *fades naturally* late-game (you stop clicking) — the right shape for an Age-I hook.
 
 **Phase 2 — Robotic Age signature: the Workforce.** Robots (a high-value product) can be
 **deployed** as workers instead of sold or fed to Probes: production bonus = `√deployed ×
