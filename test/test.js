@@ -639,6 +639,30 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("roadmap has no locks once all ages are unlocked", !E.ageRoadmap().includes("🔒 locked"));
 })();
 
+// ---------------------------------------------------------------- potential production tracking (spare-capacity readout)
+(() => {
+  // When a buffer has space, potential output == actual output (no backpressure).
+  fresh();
+  E.state.machines.ironFurnace = 5; E.state.items.ironOre = 1000; E.state.items.coal = 1000;
+  E.state.items.ironPlate = 0;                         // plenty of room
+  const m0 = E.state.stats.made.ironPlate || 0, p0 = E.potMade.ironPlate || 0;
+  E.simulate(1, 1);
+  const actual = (E.state.stats.made.ironPlate || 0) - m0, pot = (E.potMade.ironPlate || 0) - p0;
+  ok("with space, potential output == actual", Math.abs(pot - actual) < 1e-6 && actual > 4.9);
+
+  // When the output buffer is FULL and nothing drains it, actual output is throttled to ~0
+  // but POTENTIAL still reflects the full production the machines could achieve.
+  fresh();
+  E.state.machines.ironFurnace = 5; E.state.items.ironOre = 1000; E.state.items.coal = 1000;
+  E.state.items.ironPlate = E.capOf("ironPlate");     // full → backpressure
+  const m1 = E.state.stats.made.ironPlate || 0, p1 = E.potMade.ironPlate || 0;
+  E.simulate(1, 1);
+  const actualFull = (E.state.stats.made.ironPlate || 0) - m1, potFull = (E.potMade.ironPlate || 0) - p1;
+  ok("full buffer throttles actual output to ~0", actualFull < 0.01);
+  ok("potential output still shows the ~5/s capacity when full", potFull > 4.9 && potFull < 5.1);
+  ok("spare capacity (potential − actual) is surfaced when full", (potFull - actualFull) > 4.9);
+})();
+
 // ---------------------------------------------------------------- summary
 console.log(`\n${fail === 0 ? "✓ ALL PASSED" : "✗ FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

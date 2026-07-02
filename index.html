@@ -406,7 +406,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.29.0";
+const VERSION = "0.29.1";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -726,8 +726,12 @@ let state = defaultState();
 const rate = {};                                  // smoothed net/s per item (buffer trend)
 for(const k in ITEMS) rate[k]=0;
 rate.credit = 0;
-const prodRate = {};                              // smoothed GROSS output/s per item (production, ignores consumption/cap)
+const prodRate = {};                              // smoothed GROSS output/s per item (actual, throttled by backpressure)
 for(const k in ITEMS) prodRate[k]=0;
+const potRate = {};                               // smoothed POTENTIAL output/s (input-limited, ignores full-buffer backpressure)
+for(const k in ITEMS) potRate[k]=0;
+const potMade = {};                               // cumulative potential output (module-level counter; diffed per tick)
+for(const k in ITEMS) potMade[k]=0;
 
 /* =========================================================================
    DERIVED MULTIPLIERS
@@ -907,6 +911,8 @@ function simulate(dt, eff){
     if(count<=0) continue;
     let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * (m.t===0 ? prospectMult() : 1) * ocSpeed() * pr * dt;
     for(const r in m.in){ cyc=Math.min(cyc, (state.items[r]||0)/inF(r)); }
+    const cycPot = cyc * eff;                          // potential output: input-limited, BEFORE full-buffer backpressure
+    if(cycPot>0) for(const r in m.out) potMade[r]=(potMade[r]||0)+m.out[r]*cycPot;
     for(const r in m.out){ const space=capOf(r)-(state.items[r]||0); cyc=Math.min(cyc, space/m.out[r]); }
     cyc *= eff;
     if(cyc<=0) continue;
@@ -982,7 +988,7 @@ function tick(){
   if(dt<0)dt=0; if(dt>5)dt=5;
   if(state.veinLeft>0) state.veinLeft=Math.max(0, state.veinLeft-dt);   // Prospecting: expire the Rich Vein surge
   const before={credit:state.credits}; for(const k in ITEMS) before[k]=state.items[k];
-  const madeBefore={}; for(const k in ITEMS) madeBefore[k]=state.stats.made[k]||0;
+  const madeBefore={}, potBefore={}; for(const k in ITEMS){ madeBefore[k]=state.stats.made[k]||0; potBefore[k]=potMade[k]||0; }
   simulate(dt,1);
   refreshUnlocks(false);
   checkMilestones();
@@ -995,7 +1001,8 @@ function tick(){
   if(dt>0){ const k=Math.min(1,dt*3);
     for(const r in ITEMS){
       rate[r]+=((state.items[r]-before[r])/dt - rate[r])*k;
-      prodRate[r]+=(((state.stats.made[r]||0)-(madeBefore[r]||0))/dt - prodRate[r])*k;   // gross output/s
+      prodRate[r]+=(((state.stats.made[r]||0)-(madeBefore[r]||0))/dt - prodRate[r])*k;   // actual gross output/s
+      potRate[r]+=(((potMade[r]||0)-(potBefore[r]||0))/dt - potRate[r])*k;                // potential output/s (pre-backpressure)
     }
     rate.credit+=((state.credits-before.credit)/dt - rate.credit)*k;
   }
@@ -1269,17 +1276,18 @@ function updateUI(){
   for(const id in ITEMS){
     if(!itemUnlocked(id)) continue;
     const cap=capOf(id), amt=state.items[id]||0, fill=cap>0?amt/cap:0;
-    const gp=prodRate[id]||0, net=rate[id]||0;
+    const gp=prodRate[id]||0, net=rate[id]||0, pot=potRate[id]||0;
+    const spare=Math.max(0, pot-gp);                // capacity idled by backpressure (only meaningful when full)
     // "Full" = literally at cap, OR pinned near cap by production with a near-zero net (the case that jitters).
     // Using net (not a raw fill %) makes this robust to tick rate and to the consume/refill wobble.
     const full = amt>=cap-1e-6 || (fill>=0.9 && Math.abs(net) < Math.max(0.5, gp*0.3));
     el("amt-"+id).textContent=fmt(full?cap:amt);    // snap to cap when full → no last-digit jitter
     // NET gain is the headline — signed & colored, so "is my stockpile growing?" is obvious at a glance —
-    // with gross production as a small ▲ badge. Net is suppressed only while full/pinned (there it just
-    // jitters around 0), where we show "full" instead.
+    // with gross production as a small ▲ badge. When FULL we show your true PRODUCTION CAPACITY (potential,
+    // pre-backpressure) plus the spare/s you're idling — so you can plan even though net ≈ 0.
     if(full){
-      el("rate-"+id).innerHTML = gp>0.01
-        ? `<span class="pos">▲${fmt(gp)}/s</span> <span class="muted">· full</span>`
+      el("rate-"+id).innerHTML = pot>0.01
+        ? `<span class="pos">▲${fmt(pot)}/s</span> <span class="muted">· full</span>`+(spare>0.05?` <span class="warn">+${fmt(spare)}/s spare</span>`:``)
         : `<span class="muted">full</span>`;
     } else {
       const netStr = `<b class="${net>0.01?'pos':net<-0.01?'neg':'muted'}">${net>=0?'+':''}${fmt(net)}/s</b>`;
@@ -1289,7 +1297,7 @@ function updateUI(){
     const bar=el("bar-"+id); bar.style.width=Math.min(100,(full?1:fill)*100)+"%";
     const chip=el("amt-"+id).parentElement;         // amt is a direct child of the chip
     chip.classList.toggle("full", full);
-    chip.title=`making ${fmt(gp)}/s · net ${(net>=0?'+':'')+fmt(net)}/s`;   // full detail on hover
+    chip.title=`making ${fmt(gp)}/s · capacity ${fmt(pot)}/s · net ${(net>=0?'+':'')+fmt(net)}/s`;   // full detail on hover
   }
   // machines
   for(const k of MORDER){
@@ -1500,7 +1508,7 @@ function doPrestige(){
     <ul><li>Gain <b>+${fmt(gain)} 📐 Blueprints</b> (→ ${fmt(state.blueprints+gain)})</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cp">Restructure</button></div>`);
   el("cp").onclick=()=>{ state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; freshRun(state); recomputeStats();
-    for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; structureDirty=true; resetStructureDOM();
+    for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; structureDirty=true; resetStructureDOM();
     closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Restructured! +${fmt(gain)} 📐`,"unlock"); };
 }
 function doFilePatent(){
@@ -1511,7 +1519,7 @@ function doFilePatent(){
     <li>Patent upgrades are permanent — they survive every reset.</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cfp">File Patent</button></div>`);
   el("cfp").onclick=()=>{ state.patents=(state.patents||0)+gain; state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;
-    freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; recomputeStats(); resetStructureDOM();
+    freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; recomputeStats(); resetStructureDOM();
     closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Patent filed! +${fmt(gain)} ⚛`,"unlock"); };
 }
 function upgradePatent(id){ const p=PATENTS.find(x=>x.id===id); if(!p) return; const l=state.patentUpg[id]||0;
@@ -1694,6 +1702,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.29.1","Full buffers now show your spare production capacity. When an item is maxed out, its chip shows the rate you're actually CAPABLE of making (▲, your true capacity) plus how much per second is going spare because storage is full — e.g. \"▲11/s · full +6.6/s spare\". Now you can see your real output even when it's capped, so you can plan (sell the surplus, add consumers, or expand storage). Hover any chip for the full making/capacity/net breakdown."],
   ["0.29.0","🗺️ Ages Roadmap. Click the age bar (top of the Factory tab) to open a map of all six ages — each showing its status (mastered / current / locked), the Blueprints needed to unlock it, its signature mechanic, and its mastery goal with your progress. Makes the whole gated journey legible: you can see exactly what's ahead and what it'll take to get there."],
   ["0.28.0","Age VI signature + endgame engine — 🛰️ the Von Neumann Fleet. Reach the Space Age and you can Launch your Probes into a permanent fleet that self-replicates on its own — even while you're away — colonizing for a growing, permanent production boost. The fleet grows toward a cap you raise by launching more probes, so there's always a reason to keep building them. It survives Restructures and every reset, so finishing the climb finally pays off with an endless idle engine that carries across all future runs. Every age now has its own signature mechanic."],
   ["0.27.0","Age II signature — ⚡ Overclock. Once you reach the Machine Age, a toggle in the Manual panel lets you run EVERY machine +50% faster — but each cycle burns +50% more input, so it trades material efficiency for raw speed. Worth flipping on when you've got materials to spare, a trap when they're your bottleneck. It's power-neutral (distinct from the later power-based signatures) and persists across Restructures."],

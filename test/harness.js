@@ -44,6 +44,7 @@ const EXPORTS = [
   "OC_SPEED", "OC_INPUT", "overclockOn", "ocSpeed", "ocInput",
   "FLEET_CAP_MULT", "FLEET_REPLICATE", "FLEET_MULT", "fleetCap", "fleetBonus", "launchProbes",
   "ACCUMULATOR", "planAccumulator", "autoBuild", "AGE_GOALS", "checkAgeGoals", "SND", "bottleneck", "chainHealth",
+  "potMade",
 ];
 
 function loadEngine() {

@@ -377,9 +377,11 @@ Top bar (Credits +/s · Blueprints · **⚡ Power %** · **🔊 sound** · **�
 (your current goal) → always-visible resource ticker (amount / cap, flow rate, fill bar, "$" sell).
 Each chip leads with **net gain** (a bold, signed, colour-coded `±X/s` — green growing / red draining,
 so "is my stockpile piling up?" is obvious), with **gross production** as a small `▲X/s` badge (how much
-you're actually making, smoothed from `stats.made` deltas). A buffer pinned at cap shows a stable amount +
-a `full` tag with production (net is suppressed there — it only jitters around 0); hover reveals both.
-Reading net + production together makes bottlenecks legible even when net ≈ 0.
+you're actually making, smoothed from `stats.made` deltas). A buffer pinned at cap shows its **production *capacity*** (`potRate` — potential
+output *before* full-buffer backpressure, tracked via `potMade` in `simulate`) plus the **spare/s**
+being idled (`potRate − prodRate`), e.g. `▲11/s · full +6.6/s spare` — so you can see true output and
+plan even when net ≈ 0. Hover reveals making/capacity/net. Reading net + production + capacity together
+makes bottlenecks and overproduction legible even when the stockpile isn't moving.
 
 **Session HUD** (📊 top-bar button or the `` ` `` key) — a lightweight, always-on-top playtest
 overlay that instruments a live run: session time, current Age, income/min, power % + accumulator
