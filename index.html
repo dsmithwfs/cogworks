@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COGWORKS — an idle factory</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>%E2%9A%99%EF%B8%8F</text></svg>">
+<style>
+  :root{
+    --bg:#0f1116; --bg2:#171a22; --card:#1b1f2a; --card2:#212636;
+    --border:#2a3040; --border2:#3a4256;
+    --txt:#e7ebf3; --muted:#9aa4b8; --dim:#6b7488;
+    --accent:#f5a623; --accent2:#ffca6b; --good:#5ad17a; --bad:#ff6b6b; --warn:#ffb454;
+    --t0:#c98a5a; --t1:#9fb2c9; --t2:#d0a94e; --t3:#6fd0c0; --t4:#b98cff; --t5:#ff86b3; --t6:#6fe0ff;
+    --radius:12px; --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --ui:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#1a1f2e,var(--bg));
+    color:var(--txt);font-family:var(--ui);font-size:14px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;padding-bottom:40px}
+  h1,h2,h3{margin:0}
+  button{font-family:inherit;cursor:pointer;color:inherit}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .pos{color:var(--good)} .neg{color:var(--bad)} .muted{color:var(--muted)} .warn{color:var(--warn)}
+
+  header{position:sticky;top:0;z-index:20;background:rgba(15,17,22,.94);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:11px 20px}
+  .logo{display:flex;align-items:baseline;gap:9px}
+  .logo b{font-size:21px;letter-spacing:2px;color:var(--accent)}
+  .logo .gear{font-size:19px;display:inline-block;animation:spin 6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .logo small{color:var(--dim)}
+  .stat{display:flex;flex-direction:column;line-height:1.1}
+  .stat .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:19px;font-weight:700}
+  .stat .v.credits{color:var(--accent2)} .stat .v.bp{color:var(--t3)}
+  .sndbtn{background:var(--card);border:1px solid var(--border2);color:var(--muted);width:32px;height:30px;border-radius:8px;font-size:15px;line-height:1}
+  .sndbtn:hover{border-color:var(--accent);color:var(--txt)}
+  .sndbtn.on{border-color:var(--accent);color:var(--accent2)}
+  .hud{position:fixed;right:14px;bottom:14px;z-index:66;width:280px;background:rgba(18,22,30,.95);backdrop-filter:blur(6px);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;box-shadow:0 10px 34px rgba(0,0,0,.55);display:none}
+  .hudh{font-family:var(--ui);font-weight:700;color:var(--accent2);margin-bottom:6px;display:flex;justify-content:space-between}
+  .hudh #hudClose{cursor:pointer;color:var(--dim)} .hudh #hudClose:hover{color:var(--bad)}
+  .hudrow{display:flex;justify-content:space-between;gap:10px;padding:2px 0;color:var(--muted)}
+  .hudrow b{color:var(--txt);font-weight:600;text-align:right}
+  @media (prefers-reduced-motion: reduce){ *{animation-duration:0.001s !important; animation-iteration-count:1 !important; transition-duration:0.001s !important;} }
+  .prestige{margin-left:auto;background:linear-gradient(180deg,#3a2b12,#2a2010);
+    border:1px solid var(--accent);color:var(--accent2);padding:7px 13px;border-radius:10px;
+    font-weight:700;display:flex;flex-direction:column;align-items:center;line-height:1.15}
+  .prestige small{font-weight:500;color:var(--muted);font-size:11px}
+  .prestige:disabled{opacity:.45;cursor:not-allowed;border-color:var(--border2)}
+  .prestige:not(:disabled):hover{background:linear-gradient(180deg,#4a3616,#33270f)}
+
+  nav{position:sticky;top:53px;z-index:19;background:rgba(15,17,22,.94);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);display:flex;gap:4px;padding:8px 20px;flex-wrap:wrap}
+  nav button{background:transparent;border:1px solid transparent;color:var(--muted);
+    padding:6px 14px;border-radius:9px;font-size:13px;font-weight:600}
+  nav button:hover{color:var(--txt)}
+  nav button.on{background:var(--card2);border-color:var(--border2);color:var(--accent2)}
+
+  main{max-width:1180px;margin:0 auto;padding:16px 20px;display:grid;gap:16px}
+
+  /* resource ticker */
+  .ticker{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{background:var(--card);border:1px solid var(--border);border-radius:9px;
+    padding:5px 7px 6px;min-width:104px;position:relative;overflow:hidden}
+  .chip .h{display:flex;align-items:center;gap:5px;font-size:12px}
+  .chip .h .ic{font-size:14px}
+  .chip .h .nm{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .chip .h .sell{cursor:pointer;color:var(--dim);border:1px solid var(--border2);border-radius:5px;
+    font-size:10px;padding:0 4px;line-height:15px}
+  .chip .h .sell:hover{color:var(--accent2);border-color:var(--accent)}
+  .chip .v{font-size:14px;font-weight:700;margin-top:1px}
+  .chip .r{font-size:10.5px}
+  .chip .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--accent);width:0%}
+  .chip.full .bar{background:var(--bad)}
+  .chip .cap{color:var(--dim);font-weight:400;font-size:11px}
+
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+    margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .toolrow{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+  .mine{background:linear-gradient(180deg,#2a3346,#1d2534);border:1px solid var(--border2);
+    padding:10px 18px;border-radius:10px;font-weight:700}
+  .mine:active{transform:translateY(1px)} .mine b{color:var(--t0)}
+
+  .tier-h{grid-column:1/-1;color:var(--muted);font-size:11px;text-transform:uppercase;
+    letter-spacing:1.5px;margin:6px 0 2px;display:flex;align-items:center;gap:8px}
+  .tier-h::after{content:"";flex:1;height:1px;background:var(--border)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px}
+  .buymode{margin-left:auto;display:flex;gap:4px}
+  .buymode button{background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:12px;padding:3px 10px;border-radius:7px}
+  .buymode button.on{background:var(--accent);border-color:var(--accent);color:#1a1207;font-weight:700}
+  .pwbar{height:9px;background:var(--card);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  .pwbar>div{height:100%;background:var(--good);width:100%;transition:width .2s}
+  .zbtn{background:var(--card);border:1px solid var(--border2);color:var(--muted);width:26px;height:24px;border-radius:6px;font-size:14px;line-height:1}
+  .zbtn:hover{border-color:var(--accent);color:var(--txt)}
+  .treeWrap{position:relative;height:560px;overflow:hidden;border:1px solid var(--border);border-radius:10px;
+    background:radial-gradient(600px 420px at 50% 45%,#1b2130,#0c0e13);cursor:grab;user-select:none}
+  .treeWrap.drag{cursor:grabbing}
+  #treeSvg{position:absolute;inset:0}
+  .tedge{stroke:#2b3346;stroke-width:3}
+  .tedge.on{stroke:var(--accent);stroke-width:4}
+  .tnode{fill:#1c2230;stroke:#3a4256;stroke-width:2;cursor:pointer;transition:fill .15s,stroke .15s}
+  .tnode.lock{fill:#151922;stroke:#283040;opacity:.7}
+  .tnode.avail{stroke:var(--accent);stroke-width:3}
+  .tnode.avail.poor{stroke:#6b5a2f;stroke-width:2}
+  .tnode.on{fill:var(--accent);stroke:var(--accent2)}
+  .tnode.t-keystone{fill:#271f3d;stroke:#6b4fb0}
+  .tnode.t-keystone.avail{stroke:var(--accent2)}
+  .tnode.t-keystone.on{fill:#b98cff;stroke:#fff}
+  .tnode.t-start{fill:var(--accent2);stroke:#fff}
+  .tnode.refundable{stroke:var(--bad);stroke-width:3}
+  .tic{text-anchor:middle;dominant-baseline:central;pointer-events:none;fill:#0d0f15;font-weight:700}
+  .treeTip{position:absolute;display:none;pointer-events:none;background:var(--card2);border:1px solid var(--border2);
+    border-radius:8px;padding:7px 10px;font-size:12px;max-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:5;line-height:1.45}
+
+  .mc{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 11px;
+    display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+  .mc .ic{font-size:24px;width:30px;text-align:center;margin-top:2px}
+  .mc.run .ic{animation:spin 3s linear infinite}
+  .mc .name{font-weight:700;display:flex;align-items:center;gap:6px}
+  .mc .mk{font-size:10px;background:var(--card2);border:1px solid var(--border2);color:var(--accent2);
+    border-radius:5px;padding:0 5px;font-weight:700}
+  .mc .cnt{color:var(--muted);font-weight:500}
+  .mc .rec{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .mc .rec .miss{color:var(--bad)}
+  .mc .st{font-size:11px;margin-top:2px}
+  .mc .btns{grid-column:1/-1;display:flex;gap:7px;margin-top:8px}
+  .b{flex:1;border-radius:8px;padding:6px 8px;text-align:center;line-height:1.25;
+    border:1px solid var(--border2);background:linear-gradient(180deg,#22304a,#1a2438);color:var(--txt)}
+  .b small{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}
+  .b:disabled{opacity:.4;cursor:not-allowed}
+  .b.can{border-color:var(--accent);box-shadow:0 0 0 1px rgba(245,166,35,.15) inset}
+  .b.mk{background:linear-gradient(180deg,#2c2340,#20182f)}
+  .b.autob{flex:0 0 auto;max-width:70px;background:linear-gradient(180deg,#22332a,#182620);color:var(--muted)}
+  .b.autob.on{border-color:var(--good);color:var(--good);box-shadow:0 0 0 1px rgba(90,209,122,.2) inset}
+  .ach{opacity:.6}
+  .ach.done{opacity:1;border-color:var(--good)}
+  .ach .ic{filter:grayscale(1)}
+  .ach.done .ic{filter:none}
+  .b:not(:disabled):hover{border-color:var(--accent2)}
+
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}
+  select{background:var(--card);color:var(--txt);border:1px solid var(--border2);border-radius:8px;
+    padding:6px 8px;font-family:inherit}
+  .kv{display:flex;justify-content:space-between;padding:3px 0;color:var(--muted);font-size:13px}
+  .kv b{color:var(--txt)}
+
+  footer,.tabpane{display:none}
+  .tabpane.on{display:grid;gap:16px}
+  .foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--border);
+    padding-top:14px;margin-top:4px;color:var(--dim);font-size:12px}
+  .foot button{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 11px;border-radius:8px;font-size:12px}
+  .foot button:hover{border-color:var(--accent2);color:var(--txt)}
+  .foot button.danger:hover{border-color:var(--bad);color:var(--bad)}
+
+  .scrim{position:fixed;inset:0;background:rgba(6,8,12,.72);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .scrim.show{display:flex}
+  .modal{background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:22px 24px;max-width:480px;width:100%;max-height:85vh;overflow:auto}
+  .modal h3{font-size:18px;margin-bottom:8px}
+  .modal ul{margin:12px 0;padding-left:18px;color:var(--muted)} .modal ul b{color:var(--txt)}
+  .modal textarea{width:100%;height:90px;background:var(--bg);color:var(--txt);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:11px;padding:8px}
+  .modal .rw{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  .modal .rw button{padding:8px 16px;border-radius:9px;border:1px solid var(--border2);background:var(--card2);color:var(--txt)}
+  .modal .rw button.primary{background:var(--accent);border-color:var(--accent);color:#1a1207;font-weight:700}
+  #toasts{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+  .toast{background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:8px 14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);animation:pop .3s ease}
+  .toast.unlock{border-color:var(--accent)}
+  @keyframes pop{from{opacity:0;transform:translateY(8px)}}
+  .float{position:fixed;pointer-events:none;z-index:70;font-weight:700;font-family:var(--mono);font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6);animation:floatUp 1s ease-out forwards}
+  @keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-40px)}}
+  .flash{position:fixed;inset:0;pointer-events:none;z-index:80;background:radial-gradient(circle at 50% 42%,rgba(245,166,35,.4),transparent 62%);animation:flashFade 1.1s ease-out forwards}
+  @keyframes flashFade{0%{opacity:1}100%{opacity:0}}
+  .objbar{background:linear-gradient(90deg,rgba(245,166,35,.12),rgba(245,166,35,0));border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--txt)}
+  .objbar b{color:var(--accent2)}
+  .agebar{display:flex;align-items:center;gap:8px;background:linear-gradient(90deg,rgba(111,208,192,.16),rgba(111,208,192,0));border:1px solid var(--border);border-left:3px solid var(--t3);border-radius:8px;padding:9px 12px;font-size:15px;color:var(--txt)}
+  .agebar b{color:var(--txt)} .agebar .rec{margin-left:auto;color:var(--dim);font-size:12px}
+  #credits.bump{animation:bump .3s ease}
+  @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+  /* ---- visual polish pass ---- */
+  header{box-shadow:0 3px 14px rgba(0,0,0,.4)}
+  nav button.on{box-shadow:inset 0 -2px 0 var(--accent)}
+  .panel{box-shadow:0 2px 12px rgba(0,0,0,.28);background:linear-gradient(180deg,var(--bg2),color-mix(in srgb,var(--bg2) 88%, #000))}
+  .panel h2{border-bottom:1px solid var(--border);padding-bottom:8px}
+  .mc{box-shadow:0 1px 3px rgba(0,0,0,.2);transition:border-color .15s,box-shadow .15s,transform .05s}
+  .mc:hover{border-color:var(--border2);box-shadow:0 3px 10px rgba(0,0,0,.3)}
+  .mc.run{border-color:color-mix(in srgb,var(--accent) 22%, var(--border))}
+  .mc .btns .b:active{transform:translateY(1px)}
+  .b.can{box-shadow:0 0 0 1px rgba(245,166,35,.28) inset, 0 0 9px rgba(245,166,35,.12)}
+  .chip{box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .agebar,.objbar{box-shadow:0 1px 8px rgba(0,0,0,.22)}
+  .prestige:not(:disabled){box-shadow:0 0 12px rgba(245,166,35,.18)}
+  .prestige:not(:disabled):hover{box-shadow:0 0 16px rgba(245,166,35,.3)}
+  ::-webkit-scrollbar{width:12px;height:12px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:6px;border:3px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><span class="gear">⚙️</span><b>COGWORKS</b><small id="ver"></small></div>
+  <div class="stat"><span class="k">💰 Credits</span><span class="v credits num" id="credits">$0</span></div>
+  <div class="stat"><span class="k">Income</span><span class="v num" id="income" style="font-size:14px">+0/s</span></div>
+  <div class="stat"><span class="k">📐 Blueprints</span><span class="v bp num" id="bp">0</span></div>
+  <div class="stat"><span class="k">⚡ Power</span><span class="v num pos" id="power" style="font-size:15px" title="supply / demand">100%</span></div>
+  <button class="sndbtn" id="soundToggle" title="Sound on/off">🔊</button>
+  <button class="sndbtn" id="hudToggle" title="Session HUD (playtest) — or press the ` key">📊</button>
+  <button class="prestige" id="btnPrestige">♻ Restructure<small id="prestigeSub"></small></button>
+</header>
+
+<nav id="tabs">
+  <button data-tab="factory" class="on">🏭 Factory</button>
+  <button data-tab="power">⚡ Power</button>
+  <button data-tab="storage">📦 Storage &amp; Trade</button>
+  <button data-tab="tree">🌳 Advancements</button>
+  <button data-tab="talents">🎯 Talents</button>
+  <button data-tab="patents">⚛ Patents</button>
+  <button data-tab="stats">📊 Stats</button>
+</nav>
+
+<main>
+  <div class="agebar" id="agebar"></div>
+  <div class="objbar" id="objective"></div>
+  <div class="ticker" id="ticker"></div>
+
+  <section class="tabpane on" id="tab-factory">
+    <div class="panel">
+      <h2>🛠 Manual</h2>
+      <div class="toolrow">
+        <button class="mine" id="btnMine">⛏ Mine <b id="clickAmt">+1</b> Iron Ore</button>
+        <span class="muted" style="font-size:12px">Bootstrap by mining &amp; selling ore. Sell any resource from its chip (the “$”).</span>
+        <button class="b mk" id="autoToggle" style="display:none;margin-left:auto;max-width:200px"></button>
+        <button class="b mk" id="autoBalanceToggle" style="display:none;max-width:210px"></button>
+      </div>
+    </div>
+
+    <div class="panel" id="workforcePanel" style="display:none">
+      <h2>🤖 Robotic Workforce <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age V signature. Deploy Robots as workers for a production boost (√ diminishing) — or sell them / feed Probes instead.</span></h2>
+      <div class="toolrow">
+        <span class="kv" style="min-width:130px">Deployed <b id="wfDeployed" style="margin-left:6px">0</b></span>
+        <span class="kv" style="min-width:150px">Production <b id="wfBonus" style="margin-left:6px">+0%</b></span>
+      </div>
+      <div class="toolrow" style="margin-top:6px">
+        <button class="b mk" id="wfDeploy1" style="max-width:100px">Deploy 1</button>
+        <button class="b mk" id="wfDeploy10" style="max-width:100px">Deploy 10</button>
+        <button class="b mk" id="wfDeployMax" style="max-width:120px">Deploy Max</button>
+        <button class="b" id="wfRecall" style="max-width:110px">Recall All</button>
+        <span class="muted" style="font-size:12px" id="wfHint"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>🏭 Machines
+        <span class="buymode" id="buymode">
+          <button data-mode="1">×1</button><button data-mode="10">×10</button><button data-mode="max">Max</button>
+        </span>
+      </h2>
+      <div class="grid" id="machines"></div>
+    </div>
+  </section>
+
+  <section class="tabpane" id="tab-power">
+    <div class="panel">
+      <h2>⚡ Power Grid</h2>
+      <div class="kv"><span>Supply</span><b id="pwSupply">0 MW</b></div>
+      <div class="kv"><span>Demand</span><b id="pwDemand">0 MW</b></div>
+      <div class="kv"><span>Grid load</span><b id="pwRatio">100%</b></div>
+      <div class="pwbar"><div id="pwFill"></div></div>
+      <p class="muted" id="pwNote" style="margin-top:10px"></p>
+    </div>
+    <div class="panel">
+      <h2>🔌 Generators <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— uses the ×1/×10/Max mode</span></h2>
+      <div class="grid" id="generators"></div>
+      <p class="muted" id="genHint" style="margin-top:10px"></p>
+    </div>
+    <div class="panel" id="accPanel" style="display:none">
+      <h2>🔋 Accumulators <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age III signature. Bank surplus power, discharge to ride out demand spikes (great with the Auto-Builder).</span></h2>
+      <div class="kv"><span>Charge</span><b id="accCharge">0 / 0 MWh</b></div>
+      <div class="pwbar" style="margin-top:6px"><div id="accFill"></div></div>
+      <div class="toolrow" style="margin-top:10px">
+        <button class="b mk" id="buildAcc" style="max-width:300px"></button>
+        <span class="muted" style="font-size:12px" id="accHint"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="tabpane" id="tab-storage">
+    <div class="panel">
+      <h2>📦 Warehousing</h2>
+      <div class="kv"><span>Warehouses built</span><b id="whCount">0</b></div>
+      <div class="kv"><span>Storage multiplier</span><b id="whMult">×1.00</b></div>
+      <div class="toolrow" style="margin-top:8px">
+        <button class="b mk" id="btnWarehouse" style="max-width:220px">Build Warehouse<small id="whCost"></small></button>
+        <span class="muted" style="font-size:12px">Each warehouse raises the storage cap of <b>every</b> resource. Full buffers throttle upstream machines (backpressure), so expand storage to keep the whole line flowing.</span>
+      </div>
+    </div>
+    <div class="panel" id="marketPanel">
+      <h2>💹 Trade Terminal</h2>
+      <p class="muted" style="margin:0 0 8px">Build a Trade Terminal to auto-sell one resource for Credits. Higher Mk = faster selling.</p>
+      <div class="row2" style="max-width:520px">
+        <button class="b mk" id="btnMarket">Build Trade Terminal<small id="marketCost"></small></button>
+        <select id="marketSel"></select>
+      </div>
+      <div class="kv" style="margin-top:8px"><span>Terminals</span><b id="marketCount">0</b> <span>· Mk</span><b id="marketMk">0</b></div>
+      <div class="toolrow" style="margin-top:6px">
+        <button class="b mk" id="btnMarketMk" style="max-width:220px">Upgrade Terminal Mk<small id="marketMkCost"></small></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="tabpane" id="tab-tree">
+    <div class="panel">
+      <h2>🌳 Advancement Tree
+        <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">— power &amp; capability. Spend 📐 Blueprints (from Restructuring); allocate outward from the Core. Drag to pan, scroll to zoom.</span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <span class="muted num" id="treeCount" style="font-size:12px"></span>
+          <span class="buymode" id="treemode" style="margin-left:0"><button data-tmode="alloc">Allocate</button><button data-tmode="refund">Refund</button></span>
+          <button class="zbtn" id="treeRespec" title="Refund the entire tree" style="width:auto;padding:0 9px">↺ Respec</button>
+          <button class="zbtn" id="treeZoomOut">−</button>
+          <button class="zbtn" id="treeZoomIn">+</button>
+          <button class="zbtn" id="treeReset">⟳</button>
+        </span>
+      </h2>
+      <div class="treeWrap" id="treeWrap">
+        <svg id="treeSvg" width="100%" height="100%"></svg>
+        <div class="treeTip" id="treeTip"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tabpane" id="tab-talents">
+    <div class="panel">
+      <h2>🎯 Talents
+        <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">— efficiency layer. Spend ✦ Talent Points (earned as you produce materials) to cut costs. Later tiers unlock as you spend.</span>
+        <span class="num" id="tpCount" style="margin-left:auto;color:var(--accent2);font-size:15px;font-weight:700"></span>
+      </h2>
+      <div class="grid" id="talents"></div>
+    </div>
+  </section>
+
+  <section class="tabpane" id="tab-patents">
+    <div class="panel">
+      <h2>⚛ Patents
+        <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">— the deep prestige layer. Upgrades here are permanent through every reset.</span>
+        <span class="num" id="patCount" style="margin-left:auto;color:var(--t4);font-size:15px;font-weight:700"></span>
+      </h2>
+      <div id="patentBody"></div>
+    </div>
+  </section>
+
+  <section class="tabpane" id="tab-stats">
+    <div class="panel">
+      <h2>📊 Statistics</h2>
+      <div id="statList"></div>
+    </div>
+    <div class="panel">
+      <h2>🏆 Age Goals <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— master each age for a permanent reward</span></h2>
+      <div class="grid" id="ageGoalList"></div>
+    </div>
+    <div class="panel">
+      <h2>🏅 Achievements <span class="muted num" id="achCount" style="font-size:12px;text-transform:none;letter-spacing:0"></span></h2>
+      <div class="grid" id="achList"></div>
+    </div>
+    <div class="panel">
+      <h2>💾 Save</h2>
+      <div class="foot" style="border:0;padding:0;margin:0">
+        <button id="btnSave">💾 Save</button>
+        <button id="btnExport">⬆ Export</button>
+        <button id="btnImport">⬇ Import</button>
+        <button id="btnChangelog">📜 Changelog</button>
+        <button id="btnReset" class="danger">🗑 Hard reset</button>
+      </div>
+      <div class="muted" id="offlineNote" style="margin-top:12px;font-size:12px"></div>
+    </div>
+  </section>
+</main>
+
+<div class="hud" id="hud"></div>
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const VERSION = "0.21.0";
+const SAVE_KEY = "cogworks_save_v2";
+const PRESTIGE_SCALE = 1e4;
+
+/* =========================================================================
+   DATA — items, machines, research. Everything is data-driven; "longer" is
+   just more entries. Sim & UI are generic.
+   ========================================================================= */
+const TIERS = ["Extraction","Smelting & Refining","Basic Components","Advanced Components","Complex Assemblies","Robotics","Singularity Tech"];
+// Ages are the macro-journey: each groups a slice of the chain. Reaching a NEW age (ever) grants
+// a permanent bonus; after a Restructure you re-climb the ages fast — faster each run.
+const TIER_AGE = [1,1,2,3,4,5,6];                   // which age each tier belongs to
+const ROMAN = ["","I","II","III","IV","V","VI"];
+const AGES = [ null,
+  {n:"Stone & Iron Age", ic:"⛏️", tagline:"Mine ore and smelt your first plates."},
+  {n:"Machine Age",      ic:"⚙️", tagline:"Gears, wire & steel — machines built from parts."},
+  {n:"Industrial Age",   ic:"⚡", tagline:"Circuits, and a power grid to feed them."},
+  {n:"Automation Age",   ic:"🛠️", tagline:"Mechanisms, processors & the Auto-Builder."},
+  {n:"Robotic Age",      ic:"🤖", tagline:"Robot arms and full robots."},
+  {n:"Space Age",        ic:"🛰️", tagline:"AI cores, Von Neumann probes & beyond."},
+];
+function currentAge(){ let a=1; for(const k of MORDER){ if((state.machines[k]||0)>0) a=Math.max(a, TIER_AGE[MACHINES[k].t]); } return a; }
+// One headline goal per age (cumulative production of its key product) → a permanent age-themed reward.
+const AGE_GOALS = [ null,
+  {item:"ironPlate", n:5000, eff:{prod:.15}, desc:"Smelt 5,000 Iron Plates"},
+  {item:"gear",      n:5000, eff:{prod:.20}, desc:"Press 5,000 Gears"},
+  {item:"circuit",   n:3000, eff:{power:.5}, desc:"Fabricate 3,000 Circuits"},
+  {item:"mechanism", n:1000, eff:{prod:.25}, desc:"Assemble 1,000 Mechanisms"},
+  {item:"robot",     n:200,  eff:{prod:.30}, desc:"Build 200 Robots"},
+  {item:"probe",     n:20,   eff:{bp:.5},    desc:"Launch 20 Von Neumann Probes"},
+];
+
+// id: [name, icon, tier, storageCap, sellValue]
+const ITEMS = {
+  ironOre:    {n:"Iron Ore",     ic:"⛏️", t:0, cap:500, sell:1},
+  coal:       {n:"Coal",         ic:"⚫", t:0, cap:500, sell:1},
+  copperOre:  {n:"Copper Ore",   ic:"🟤", t:0, cap:500, sell:1},
+  stone:      {n:"Stone",        ic:"🪨", t:0, cap:500, sell:0.8},
+  crudeOil:   {n:"Crude Oil",    ic:"🛢️", t:0, cap:400, sell:2},
+  siliconSand:{n:"Silicon Sand", ic:"⏳", t:0, cap:400, sell:1.5},
+  ironPlate:  {n:"Iron Plate",   ic:"⬜", t:1, cap:400, sell:3},
+  copperPlate:{n:"Copper Plate", ic:"🟧", t:1, cap:400, sell:3},
+  brick:      {n:"Brick",        ic:"🧱", t:1, cap:400, sell:2.5},
+  concrete:   {n:"Concrete",     ic:"🟫", t:1, cap:300, sell:7},
+  plastic:    {n:"Plastic",      ic:"🟩", t:1, cap:300, sell:6},
+  gear:       {n:"Gear",         ic:"⚙️", t:2, cap:300, sell:10},
+  copperWire: {n:"Copper Wire",  ic:"🧵", t:2, cap:400, sell:5},
+  steel:      {n:"Steel",        ic:"🔩", t:2, cap:200, sell:18},
+  alloy:      {n:"Alloy",        ic:"🪙", t:2, cap:250, sell:15},
+  circuit:    {n:"Circuit",      ic:"🔌", t:3, cap:200, sell:30},
+  silicon:    {n:"Silicon",      ic:"🔷", t:3, cap:200, sell:25},
+  motor:      {n:"Electric Motor",ic:"🧲", t:3, cap:150, sell:40},
+  mechanism:  {n:"Mechanism",    ic:"🛠️", t:4, cap:120, sell:90},
+  processor:  {n:"Processor",    ic:"💾", t:4, cap:120, sell:200},
+  robotArm:   {n:"Robot Arm",    ic:"🦾", t:5, cap:80,  sell:500},
+  robot:      {n:"Robot",        ic:"🤖", t:5, cap:60,  sell:2500},
+  aiCore:     {n:"AI Core",      ic:"🧠", t:6, cap:40,  sell:15000},
+  probe:      {n:"Von Neumann Probe", ic:"🛰️", t:6, cap:25, sell:150000},
+};
+
+// Machines. build.cr = base credit cost (scales ×1.15/owned). build.bom = flat component cost per build.
+// in/out are per-machine per-second at Mk 0. mkItem = component consumed by Mk upgrades.
+// unlock = machines required (built count) to reveal this. Start-unlocked have unlock:null.
+const MACHINES = {
+  miner:        {n:"Miner",           ic:"⛏️", t:0, rate:1, build:{cr:15},                                in:{},                              out:{ironOre:1},   mkItem:"gear",     unlock:null},
+  coalDrill:    {n:"Coal Drill",      ic:"⚫", t:0, rate:1, build:{cr:60},                                in:{},                              out:{coal:1},      mkItem:"gear",     unlock:null},
+  copperMiner:  {n:"Copper Miner",    ic:"🟤", t:0, rate:1, build:{cr:80,bom:{ironPlate:5}},              in:{},                              out:{copperOre:1}, mkItem:"gear",     unlock:{ironFurnace:1}},
+  quarry:       {n:"Quarry",          ic:"🪨", t:0, rate:1, build:{cr:150,bom:{ironPlate:8}},             in:{},                              out:{stone:1},     mkItem:"gear",     unlock:{ironFurnace:1}},
+  oilPump:      {n:"Oil Pump",        ic:"🛢️", t:0, rate:1, build:{cr:5000,bom:{steel:10,gear:20}},       in:{},                              out:{crudeOil:1},  mkItem:"steel",    unlock:{assembler:1}},
+  sandExtractor:{n:"Sand Extractor",  ic:"⏳", t:0, rate:1, build:{cr:4000,bom:{steel:8}},                in:{},                              out:{siliconSand:1},mkItem:"steel",   unlock:{assembler:1}},
+
+  ironFurnace:  {n:"Iron Furnace",    ic:"🔥", t:1, rate:1, smelt:true, build:{cr:120},                               in:{ironOre:2,coal:1},              out:{ironPlate:1}, mkItem:"gear",     unlock:null},
+  copperFurnace:{n:"Copper Furnace",  ic:"🟧", t:1, rate:1, smelt:true, build:{cr:200,bom:{ironPlate:10}},            in:{copperOre:2,coal:1},            out:{copperPlate:1},mkItem:"gear",    unlock:{ironFurnace:1}},
+  kiln:         {n:"Kiln",            ic:"🧱", t:1, rate:1, build:{cr:250,bom:{ironPlate:8}},             in:{stone:2,coal:1},                out:{brick:1},     mkItem:"gear",     unlock:{ironFurnace:1}},
+  cementKiln:   {n:"Cement Kiln",     ic:"🏗️", t:1, rate:1, build:{cr:200,bom:{ironPlate:8}},             in:{stone:2,coal:1},                out:{concrete:1},  mkItem:"gear",     unlock:{ironFurnace:1}},
+  refinery:     {n:"Refinery",        ic:"⚗️", t:1, rate:1, build:{cr:6000,bom:{steel:15,circuit:10}},    in:{crudeOil:2},                    out:{plastic:1},   mkItem:"circuit",  unlock:{assembler:1}},
+  siliconFurn:  {n:"Silicon Furnace", ic:"🔷", t:1, rate:1, build:{cr:6000,bom:{steel:12,brick:20}},      in:{siliconSand:2,coal:2},          out:{silicon:1},   mkItem:"steel",    unlock:{assembler:1}},
+
+  gearPress:    {n:"Gear Press",      ic:"⚙️", t:2, rate:1, build:{cr:400,bom:{ironPlate:15}},            in:{ironPlate:2},                   out:{gear:1},      mkItem:"circuit",  unlock:{ironFurnace:1}},
+  wireMill:     {n:"Wire Mill",       ic:"🧵", t:2, rate:1, build:{cr:400,bom:{copperPlate:15}},          in:{copperPlate:1},                 out:{copperWire:2},mkItem:"circuit",  unlock:{copperFurnace:1}},
+  steelMill:    {n:"Steel Mill",      ic:"🔩", t:2, rate:1, smelt:true, build:{cr:1200,bom:{ironPlate:20,gear:10}},   in:{ironPlate:3,coal:2},            out:{steel:1},     mkItem:"circuit",  unlock:{gearPress:1}},
+  alloyFurnace: {n:"Alloy Furnace",   ic:"🪙", t:2, rate:1, smelt:true, build:{cr:300,bom:{ironPlate:10}},           in:{ironPlate:2,copperPlate:1},     out:{alloy:1},     mkItem:"gear",     unlock:{copperFurnace:1}},
+  foundry:      {n:"Foundry",         ic:"⚒️", t:2, rate:1, smelt:true, build:{cr:1500,bom:{ironPlate:20,alloy:10}}, in:{alloy:1,coal:1},                out:{steel:1},     mkItem:"circuit",  unlock:{steelMill:1,alloyFurnace:1}},
+
+  circuitFab:   {n:"Circuit Fab",     ic:"🔌", t:3, rate:1, build:{cr:3000,bom:{copperWire:20,gear:10}},  in:{copperWire:3,ironPlate:1},      out:{circuit:1},   mkItem:"steel",    unlock:{wireMill:1,steelMill:1}},
+  motorWinder:  {n:"Motor Winder",    ic:"🌀", t:3, rate:1, build:{cr:4000,bom:{copperWire:20,steel:10}}, in:{copperWire:3,steel:1},          out:{motor:1},     mkItem:"steel",    unlock:{circuitFab:1}},
+
+  assembler:    {n:"Assembler",       ic:"🛠️", t:4, rate:1, build:{cr:8000,bom:{circuit:20,gear:20,steel:10}}, in:{gear:2,circuit:1},         out:{mechanism:1}, mkItem:"steel",    unlock:{circuitFab:1}},
+  gearworks:    {n:"Gearworks",       ic:"🔧", t:4, rate:1, build:{cr:12000,bom:{motor:15,gear:20,steel:10}}, in:{motor:1,gear:1},          out:{mechanism:1}, mkItem:"steel",    unlock:{assembler:1,motorWinder:1}},
+  chipFab:      {n:"Chip Fab",        ic:"💾", t:4, rate:1, build:{cr:15000,bom:{circuit:30,silicon:15,plastic:15}}, in:{circuit:3,silicon:1,plastic:1}, out:{processor:1}, mkItem:"mechanism", unlock:{assembler:1}},
+
+  roboticsLab:  {n:"Robotics Lab",    ic:"🦾", t:5, rate:1, build:{cr:40000,bom:{mechanism:20,processor:10,steel:30}}, in:{mechanism:2,processor:1,steel:1}, out:{robotArm:1}, mkItem:"processor", unlock:{chipFab:1}},
+  robotAssembler:{n:"Robot Assembler",ic:"🤖", t:5, rate:1, build:{cr:100000,bom:{robotArm:10,processor:10,mechanism:20}}, in:{robotArm:1,processor:1,mechanism:1}, out:{robot:1}, mkItem:"processor", unlock:{roboticsLab:1}},
+  aiFoundry:  {n:"AI Foundry",     ic:"🧠", t:6, rate:1, build:{cr:400000,bom:{processor:30,robotArm:15,circuit:50}},  in:{processor:2,robotArm:1},   out:{aiCore:1}, mkItem:"aiCore",   unlock:{robotAssembler:1}},
+  probeAssembler:{n:"Probe Assembler",ic:"🛰️", t:6, rate:1, build:{cr:2000000,bom:{aiCore:15,robot:15,steel:80}},    in:{aiCore:1,robot:1,steel:2},  out:{probe:1}, mkItem:"aiCore",   unlock:{aiFoundry:1}},
+};
+const MORDER = Object.keys(MACHINES);          // already in raw->finished order
+const START_MACHINES = ["miner","coalDrill","ironFurnace"];
+const START_ITEMS = ["ironOre","coal","ironPlate"];
+
+// ---- Advancement Tree (the prestige "shop") --------------------------------
+// A large connected passive tree. Blueprints allocate nodes; a node is available only
+// when an adjacent node is already allocated (Path-of-Exile-style pathing). Every node is
+// just a bundle of stat additions consumed by st()/the derived getters below.
+const M=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"minor"});
+const N=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"notable"});
+const K=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"keystone"});
+const ARMS = [
+  {key:"ind", angle:-90, rings:[
+    {spine:M("Tooling I","+8% global production",{prod:.08},2),          side:[M("Bulk Hoppers","+10% storage caps",{cap:.10},2)]},
+    {spine:M("Tooling II","+10% global production",{prod:.10},3),          side:[N("Blast Furnace","+50% smelter output — Iron/Copper Furnace, Steel Mill, Alloy Furnace & Foundry",{smelt:.50},6)]},
+    {spine:N("Foreman","+30% global production",{prod:.30},8),           side:[M("Overtime","+10% global production",{prod:.10},4)]},
+    {spine:M("Tooling III","+12% global production",{prod:.12},5)},
+    {spine:M("Assembly Line","+18% global production",{prod:.18},7),     side:[M("Precision Jigs","+12% production",{prod:.12},6)]},
+    {spine:K("Overdrive Core","+120% production — but +50% power demand",{prod:1.2,powerdraw:.5},32)},
+  ]},
+  {key:"log", angle:-30, rings:[
+    {spine:M("Shelving I","+12% storage caps",{cap:.12},2),             side:[M("Wide Aisles","+10% storage caps",{cap:.10},2)]},
+    {spine:M("Shelving II","+15% storage caps",{cap:.15},3)},
+    {spine:N("Warehouse Grid","+40% storage caps",{cap:.40},8),         side:[M("Deep Bins","+12% storage caps",{cap:.12},4)]},
+    {spine:M("Shelving III","+18% storage caps",{cap:.18},5)},
+    {spine:M("Conveyors","+20% storage caps",{cap:.20},7),             side:[M("Pallet Racks","+12% storage caps",{cap:.12},6)]},
+    {spine:K("Infinite Shelving","+200% storage caps",{cap:2.0},32)},
+  ]},
+  {key:"pow", angle:30, rings:[
+    {spine:M("Wiring I","+12% generator output",{power:.12},2),         side:[M("Grid Tap","+10 MW base grid",{grid:10},2)]},
+    {spine:M("Wiring II","+14% generator output",{power:.14},3)},
+    {spine:N("Substation","+15 MW base grid, +20% generator output",{grid:15,power:.20},8), side:[M("Extra Mains","+12 MW base grid",{grid:12},4)]},
+    {spine:M("Wiring III","+16% generator output",{power:.16},5)},
+    {spine:M("Turbines","+25% generator output",{power:.25},7),        side:[M("Capacitors","+15 MW base grid",{grid:15},6)]},
+    {spine:K("Zero-Point Grid","+150% generator output, +250 MW base grid",{power:1.5,grid:250},34)},
+  ]},
+  {key:"com", angle:90, rings:[
+    {spine:M("Haggling I","+12% sale value",{sell:.12},2),             side:[M("Market Stall","+10% sale value",{sell:.10},2)]},
+    {spine:M("Haggling II","+14% sale value",{sell:.14},3)},
+    {spine:N("Trade Guild","+40% sale value",{sell:.40},8),            side:[M("Brokers","+12% sale value",{sell:.12},4)]},
+    {spine:M("Haggling III","+16% sale value",{sell:.16},5)},
+    {spine:M("Futures","+22% sale value",{sell:.22},7),               side:[M("Arbitrage","+12% sale value",{sell:.12},6)]},
+    {spine:K("Monopoly","+180% sale value",{sell:1.8},32)},
+  ]},
+  {key:"eng", angle:150, rings:[
+    {spine:M("Servo Motors I","+6% global production",{prod:.06},2),    side:[M("Hand Tools","+2 ore per click",{click:2},2)]},
+    {spine:M("Servo Motors II","+8% global production",{prod:.08},3)},
+    {spine:N("R&D Lab","+30% global production",{prod:.30},8),          side:[M("Power Tools","+4 ore per click",{click:4},4), N("Auto-Builder","Unlocks the Auto-Build system — flag machines & generators to build themselves",{auto:1},14)]},
+    {spine:M("Servo Motors III","+8% global production",{prod:.08},5)},
+    {spine:M("CNC Mills","+22% global production",{prod:.22},7),        side:[M("Robotic Arms","+16% production",{prod:.16},6)]},
+    {spine:K("Nanoforge","+110% global production",{prod:1.1},32)},
+  ]},
+  {key:"asc", angle:210, rings:[
+    {spine:M("Blueprinting I","+10% Blueprints per Restructure",{bp:.10},2), side:[M("Battery I","+2h offline cap",{offcap:2},2)]},
+    {spine:M("Blueprinting II","+12% Blueprints per Restructure",{bp:.12},3)},
+    {spine:N("The Archives","+40% Blueprints per Restructure",{bp:.40},9), side:[M("Night Shift","+10% offline rate",{offeff:.10},4)]},
+    {spine:M("Kickstart I","Runs begin with a starting boost",{kick:1},6)},
+    {spine:M("Blueprinting III","+16% Blueprints per Restructure",{bp:.16},7), side:[M("Kickstart II","Runs begin with a bigger boost",{kick:1},9)]},
+    {spine:K("Singularity","+150% Blueprints, +50% offline rate, +50% production",{bp:1.5,offeff:.5,prod:.5},40)},
+  ]},
+];
+const CX=800, CY=800, RING=118;                       // tree layout center + ring spacing
+let NODES={}, EDGES=[];
+function linkNodes(a,b){ NODES[a].links.push(b); NODES[b].links.push(a); EDGES.push([a,b]); }
+function buildTreeData(){
+  NODES={ start:{name:"The Core", desc:"The origin of your factory. Allocate outward from here.", type:"start", cost:0, eff:{}, x:CX, y:CY, links:[]} };
+  EDGES=[];
+  ARMS.forEach(arm=>{ const ang=arm.angle*Math.PI/180; let prev="start";
+    arm.rings.forEach((ring,ri)=>{ const rad=(ri+1)*RING, sid=arm.key+"_"+(ri+1);
+      NODES[sid]=Object.assign({}, ring.spine, {x:CX+Math.cos(ang)*rad, y:CY+Math.sin(ang)*rad, links:[], arm:arm.key});
+      linkNodes(prev, sid);
+      (ring.side||[]).forEach((sp,si)=>{ const off=(si%2===0?1:-1)*(0.34+0.18*Math.floor(si/2)), a2=ang+off, nid=sid+"_s"+si;
+        NODES[nid]=Object.assign({}, sp, {x:CX+Math.cos(a2)*rad, y:CY+Math.sin(a2)*rad, links:[], arm:arm.key});
+        linkNodes(sid, nid); });
+      prev=sid; });
+  });
+  // cross-arm links: weave between adjacent branches at a mid ring (notables) and near the tips
+  [3,5].forEach(r=>{ for(let i=0;i<ARMS.length;i++){
+    const idA=ARMS[i].key+"_"+r, idB=ARMS[(i+1)%ARMS.length].key+"_"+r;
+    if(NODES[idA] && NODES[idB]) linkNodes(idA,idB);
+  }});
+}
+buildTreeData();
+
+// ---- Milestones / achievements --------------------------------------------
+// Latched on completion (survive prestige). Rewards are stat bundles aggregated by st().
+const MILESTONES = [
+  {id:"c1", name:"Petty Cash",          desc:"Earn $1,000 lifetime",             eff:{prod:.02}, cond:()=>state.lifetimeCredits>=1e3},
+  {id:"c2", name:"Turning a Profit",    desc:"Earn $1M lifetime",                eff:{sell:.03}, cond:()=>state.lifetimeCredits>=1e6},
+  {id:"c3", name:"Industrialist",       desc:"Earn $1B lifetime",                eff:{prod:.05}, cond:()=>state.lifetimeCredits>=1e9},
+  {id:"c4", name:"Tycoon",              desc:"Earn $1T lifetime",                eff:{prod:.08,sell:.05}, cond:()=>state.lifetimeCredits>=1e12},
+  {id:"b1", name:"Fabricator",          desc:"Build 50 machines (lifetime)",     eff:{prod:.03}, cond:()=>state.stats.built>=50},
+  {id:"b2", name:"Mass Producer",       desc:"Build 1,000 machines (lifetime)",  eff:{build:.05}, cond:()=>state.stats.built>=1000},
+  {id:"b3", name:"Megafactory",         desc:"Build 10,000 machines (lifetime)", eff:{prod:.08}, cond:()=>state.stats.built>=1e4},
+  {id:"p1", name:"Fresh Start",         desc:"Restructure once",                 eff:{bp:.05}, cond:()=>state.prestiges>=1},
+  {id:"p2", name:"Serial Restructurer", desc:"Restructure 5 times",              eff:{prod:.05}, cond:()=>state.prestiges>=5},
+  {id:"p3", name:"Reincarnated",        desc:"Restructure 15 times",             eff:{bp:.10}, cond:()=>state.prestiges>=15},
+  {id:"a1", name:"Skilled",             desc:"Allocate 10 tree nodes (lifetime)",eff:{prod:.03}, cond:()=>state.stats.allocs>=10},
+  {id:"a2", name:"Mastermind",          desc:"Allocate 40 tree nodes (lifetime)",eff:{prod:.05,bp:.05}, cond:()=>state.stats.allocs>=40},
+  {id:"g1", name:"Warehoused",          desc:"Build 10 Warehouses",              eff:{cap:.10}, cond:()=>state.warehouses>=10},
+  {id:"bp1",name:"Blueprint Baron",     desc:"Earn 250 Blueprints (lifetime)",   eff:{bp:.10}, cond:()=>state.stats.bpEarned>=250},
+  {id:"t1", name:"Roboticist",          desc:"Build a Robot Assembler",          eff:{prod:.10}, cond:()=>(state.machines.robotAssembler||0)>0},
+  {id:"t2", name:"Fusion Age",          desc:"Build a Fusion Reactor",           eff:{power:.10}, cond:()=>(state.generators.fusion||0)>0},
+  {id:"t3", name:"Machine Mind",        desc:"Build an AI Foundry",              eff:{prod:.15}, cond:()=>(state.machines.aiFoundry||0)>0},
+  {id:"t4", name:"Von Neumann",         desc:"Build a Probe Assembler",          eff:{prod:.20,bp:.10}, cond:()=>(state.machines.probeAssembler||0)>0},
+];
+const STAT_LABEL={prod:"production",input:"inputs",cap:"storage",sell:"sale value",build:"build cost",
+  mkcost:"Mk cost",power:"generator output",fuel:"fuel use",bp:"Blueprints",offeff:"offline rate",
+  rawcost:"raw material cost"};
+function effText(eff){ return Object.keys(eff).map(k=>{
+  if(k==="grid") return `+${eff[k]} MW grid`;
+  if(k==="offcap") return `+${eff[k]}h offline cap`;
+  if(k==="click") return `+${eff[k]} ore/click`;
+  if(k==="kick") return `starting boost`;
+  if(k==="auto") return `unlocks Auto-Build`;
+  const neg=["input","build","mkcost","fuel","rawcost"].includes(k);
+  return `${neg?"−":"+"}${Math.round(eff[k]*100)}% ${STAT_LABEL[k]||k}`;
+}).join(", "); }
+
+// ---- Talent Tree (second meta layer, currency: Talent Points ✦) ------------
+// Ranked talents in 3 tiers; later tiers unlock as you spend TP. Flagship talents cut raw
+// material costs (tier-0 consumption). Per-rank effects are summed into st() like everything else.
+// Talents are the EFFICIENCY layer (cost reduction only) — no overlap with the tree's multipliers.
+const TALENTS = [
+  {id:"extract",  tier:1, name:"Efficient Extraction", max:10, per:{rawcost:.03},        desc:"−3% raw material cost / rank"},
+  {id:"lean",     tier:1, name:"Lean Process",         max:10, per:{input:.015},         desc:"−1.5% all input costs / rank"},
+  {id:"thrifty",  tier:1, name:"Thrifty Builds",       max:10, per:{build:.02},          desc:"−2% machine build cost / rank"},
+  {id:"fuel",     tier:2, name:"Fuel Economy",         max:8,  per:{fuel:.03},           desc:"−3% generator fuel use / rank"},
+  {id:"recycle",  tier:2, name:"Recyclers",            max:10, per:{input:.015},         desc:"−1.5% all input costs / rank"},
+  {id:"precision",tier:2, name:"Precision Tooling",    max:10, per:{mkcost:.03},         desc:"−3% Mk upgrade cost / rank"},
+  {id:"master",   tier:3, name:"Master Extractor",     max:10, per:{rawcost:.05},        desc:"−5% raw material cost / rank"},
+  {id:"zerowaste",tier:3, name:"Zero Waste",           max:10, per:{input:.02},          desc:"−2% all input costs / rank"},
+  {id:"overhaul", tier:3, name:"Grand Overhaul",       max:5,  per:{build:.03,mkcost:.03},desc:"−3% build & Mk cost / rank"},
+];
+const TIER_REQ = {1:0, 2:5, 3:15};                 // total Talent Points spent to unlock each tier
+const talentCost = (t,rank) => t.tier * (rank+1);  // rising cost per rank
+function talentSpent(){ let s=0; for(const t of TALENTS){ const r=state.talents[t.id]||0; s += t.tier*r*(r+1)/2; } return s; }
+const tierUnlocked = tier => talentSpent() >= TIER_REQ[tier];
+// Talent Points are earned from cumulative production (not prestige) — a different axis than Blueprints.
+const TP_SCALE = 100;
+const earnedTP = () => Math.floor(Math.sqrt((state.stats.produced||0)/TP_SCALE));
+function grantTP(){ const e=earnedTP(); if(e>(state.tpClaimed||0)){ state.talentPoints=(state.talentPoints||0)+(e-state.tpClaimed); state.tpClaimed=e; } }
+
+// ---- Patents: the deep (second) prestige layer -----------------------------
+// Filing a Patent wipes the factory + Credits + Blueprints + the Advancement tree, granting
+// Patents (⚛) based on Blueprints earned this cycle. Patent upgrades are permanent — they
+// survive both Restructure and File Patent — and feed st() like everything else.
+const PATENTS = [
+  {id:"legacy",   name:"Industrial Legacy",  base:1, per:{prod:.25},        desc:"+25% global production / level"},
+  {id:"reserves", name:"Vast Reserves",      base:1, per:{cap:.5},          desc:"+50% storage cap / level"},
+  {id:"empire",   name:"Trade Empire",       base:1, per:{sell:.25},        desc:"+25% sale value / level"},
+  {id:"grants",   name:"Research Grants",    base:2, per:{bp:.25},          desc:"+25% Blueprint gain / level"},
+  {id:"doctrine", name:"Power Doctrine",     base:1, per:{power:.5},        desc:"+50% generator output / level"},
+  {id:"mandate",  name:"Automation Mandate", base:3, per:{prod:.25,cap:.25},desc:"+25% production & storage / level"},
+];
+const PATENT_UNLOCK = 15;                          // total Blueprints ever earned to unlock the layer
+const PATENT_SCALE = 50;                           // Blueprints-this-cycle per √ Patent
+const patentCost = (p,lvl) => p.base * (lvl+1);
+const patentAvailable = () => Math.floor(Math.sqrt((state.bpCycle||0)/PATENT_SCALE));
+const patentsUnlocked = () => (state.stats.bpEarned||0) >= PATENT_UNLOCK || (state.patents||0) > 0;
+
+const WAREHOUSE = {base:500, mult:1.15, bom:{brick:10}};
+const MARKET = {base:2000, mult:1.18, bom:{ironPlate:10,gear:10}, rate:2}; // sells 2 items/s/terminal at Mk0
+
+// Power — a cross-cutting constraint. Machines draw power (by tier, scaled by Mk);
+// generators supply it. Under-supply throttles the WHOLE factory proportionally.
+const BASE_GRID = 200;                             // free MW — covers early/mid game; power bites once you scale big
+const DRAW = [1, 1, 2, 3, 5, 8, 12];               // MW per machine, indexed by machine tier
+const GENERATORS = {
+  steam:  {n:"Steam Engine",   ic:"💨", power:25,  fuel:{coal:1}, build:{cr:500,    mult:1.18, bom:{ironPlate:20,gear:10}},          unlock:{gearPress:1}},
+  solar:  {n:"Solar Panel",    ic:"☀️", power:20,  fuel:null,     build:{cr:8000,   mult:1.16, bom:{steel:20,circuit:15}}, unlock:{circuitFab:1}},
+  fusion: {n:"Fusion Reactor", ic:"☢️", power:600, fuel:null,     build:{cr:200000, mult:1.20, bom:{processor:20,robotArm:10,steel:30}}, unlock:{roboticsLab:1}},
+};
+const GORDER = Object.keys(GENERATORS);
+// Age III signature: accumulators bank surplus power and discharge to cover demand spikes.
+const ACCUMULATOR = {base:6000, mult:1.18, bom:{circuit:15, steel:15}, cap:80};   // MWh stored per unit
+let lastPower = {supply:BASE_GRID, demand:0, ratio:1};   // updated each sim tick, read by UI
+let buyMode = "1";                                        // "1" | "10" | "max"
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+function freshRun(s){
+  s.credits = 0;
+  s.items = {}; for(const k in ITEMS) s.items[k]=0;
+  s.machines = {}; for(const k in MACHINES) s.machines[k]=0;
+  s.mk = {}; for(const k in MACHINES) s.mk[k]=0;
+  s.warehouses = 0;
+  s.markets = 0; s.marketMk = 0; s.marketItem = "ironOre";
+  s.generators = {}; for(const k in GENERATORS) s.generators[k]=0;
+  s.unlocked = {};
+  START_MACHINES.forEach(k=>s.unlocked[k]=true);
+  START_ITEMS.forEach(k=>s.unlocked["item:"+k]=true);
+  s.runCredits = 0;
+  s.age = 1;                                        // current age resets each run; maxAge persists
+  s.deployed = 0;                                   // Robotic-age workforce (per-run)
+  s.accumulators = 0; s.charge = 0;                 // Industrial-age power buffer (per-run)
+  let ks=0; for(const id in (s.allocated||{})){ const n=NODES[id]; if(n && n.eff.kick) ks+=n.eff.kick; }
+  if(ks>0){ s.warehouses+=ks; s.machines.miner+=3*ks; s.machines.ironFurnace+=2*ks; s.credits+=500*ks; }
+}
+function defaultState(){
+  const s = {version:VERSION, lastSaved:Date.now(), blueprints:0, lifetimeCredits:0, prestiges:0,
+    allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}},
+    auto:{}, autoOn:true, autoBalance:false, talentPoints:0, talents:{}, tpClaimed:0,
+    patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false};
+  freshRun(s);
+  return s;
+}
+let state = defaultState();
+const rate = {};                                  // smoothed net/s per item
+for(const k in ITEMS) rate[k]=0;
+rate.credit = 0;
+
+/* =========================================================================
+   DERIVED MULTIPLIERS
+   ========================================================================= */
+let statCache = {};                                // summed effects of allocated tree nodes + earned milestones
+function recomputeStats(){
+  const s={};
+  for(const id in state.allocated){ if(!state.allocated[id]) continue; const n=NODES[id]; if(!n) continue;
+    for(const k in n.eff) s[k]=(s[k]||0)+n.eff[k]; }
+  for(const m of MILESTONES){ if(state.milestones[m.id]) for(const k in m.eff) s[k]=(s[k]||0)+m.eff[k]; }
+  for(let a=1;a<=6;a++){ if(state.ageGoals[a]){ const e=AGE_GOALS[a].eff; for(const k in e) s[k]=(s[k]||0)+e[k]; } }
+  for(const t of TALENTS){ const r=state.talents[t.id]||0; if(r>0) for(const k in t.per) s[k]=(s[k]||0)+t.per[k]*r; }
+  for(const p of PATENTS){ const l=state.patentUpg[p.id]||0; if(l>0) for(const k in p.per) s[k]=(s[k]||0)+p.per[k]*l; }
+  const agesBeyond=Math.max(0,(state.maxAge||1)-1); if(agesBeyond>0) s.prod=(s.prod||0)+0.10*agesBeyond; // permanent per-age dividend
+  const wf=workforceBonus(); if(wf>0) s.prod=(s.prod||0)+wf;         // Robotic-age workforce (in-run)
+  statCache=s;
+}
+const st = k => statCache[k]||0;
+const globalRate   = () => 1 + st("prod");
+const inputEff     = () => Math.max(0.4, 1 - st("input"));
+const rawEff       = () => Math.max(0.2, 1 - st("rawcost"));   // extra reduction on tier-0 (raw) inputs
+const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
+const marketMult   = () => 1 + st("sell");
+const buildDiscount= () => Math.max(0.4, 1 - st("build"));
+const mkDiscount   = () => Math.max(0.4, 1 - st("mkcost"));
+const offlineEff   = () => Math.min(1, 0.5 + st("offeff"));
+const offlineCap   = () => (4 + st("offcap")) * 3600;
+const orePerClick  = () => 1 + Math.floor(state.prestiges/2) + st("click");
+const capOf        = id => Math.floor(ITEMS[id].cap * capMult());
+const mkMult       = id => 1 + 0.5*(state.mk[id]||0);
+const bpFor        = rc => Math.floor(Math.pow(Math.max(0,rc)/PRESTIGE_SCALE, 0.6) * (1 + st("bp")));
+const genMult      = () => 1 + st("power");        // generator output multiplier
+const gridBase     = () => BASE_GRID + st("grid"); // free MW
+const fuelMult     = () => Math.max(0.25, 1 - st("fuel"));
+const demandMult   = () => 1 + st("powerdraw");
+const smeltMult    = () => 1 + st("smelt");        // smelter-only output bonus (furnaces, mills, foundry)
+const workforceBonus = () => Math.sqrt(state.deployed||0) * 0.05;   // Robotic-age: √deployed × 5% production
+
+/* =========================================================================
+   COSTS
+   ========================================================================= */
+const capNum = () => buyMode==="max" ? "max" : Number(buyMode);
+// Generic batch planner: how many to build (respecting scaling credits AND flat component BOM)
+// and the total credit cost. `unit` = single-build credit cost (shown when nothing is affordable yet).
+function planBuild(baseCr, mult, owned, bom, cap){
+  const c0 = baseCr * Math.pow(mult, owned) * buildDiscount();
+  let compMax = Infinity;
+  for(const r in (bom||{})) compMax = Math.min(compMax, Math.floor((state.items[r]||0) / bom[r]));
+  let n = (cap==="max") ? Infinity : cap;
+  n = Math.min(n, compMax);
+  if(n===Infinity){
+    n = Math.floor(Math.log(state.credits*(mult-1)/c0 + 1) / Math.log(mult));
+    if(!isFinite(n) || n<0) n=0;
+  }
+  const costOf = k => Math.floor(c0 * (Math.pow(mult,k)-1) / (mult-1));
+  while(n>0 && costOf(n) > state.credits) n--;
+  return {n, cost:(n>0?costOf(n):0), unit:Math.floor(c0)};
+}
+function scaleBOM(bom, n){ const o={}; for(const r in (bom||{})) o[r]=bom[r]*n; return o; }
+function buildBOM(key){ return MACHINES[key].build.bom || {}; }
+const planMachine   = (key,cap) => planBuild(MACHINES[key].build.cr, 1.15, state.machines[key]||0, buildBOM(key), cap);
+const planGenerator = (key,cap) => planBuild(GENERATORS[key].build.cr, GENERATORS[key].build.mult, state.generators[key]||0, GENERATORS[key].build.bom, cap);
+const planWarehouse = cap => planBuild(WAREHOUSE.base, WAREHOUSE.mult, state.warehouses, WAREHOUSE.bom, cap);
+const planMarket    = cap => planBuild(MARKET.base, MARKET.mult, state.markets, MARKET.bom, cap);
+function mkCredits(key){ const m=MACHINES[key]; return Math.floor(m.build.cr*2 * Math.pow(2, state.mk[key]||0) * mkDiscount()); }
+function mkBOM(key){ const m=MACHINES[key]; const lvl=state.mk[key]||0; const amt=Math.ceil((5+5*lvl)*mkDiscount()); const o={}; o[m.mkItem]=amt; return o; }
+function marketMkCredits(){ return Math.floor(MARKET.base*3 * Math.pow(2, state.marketMk) * mkDiscount()); }
+function marketMkBOM(){ return {circuit: Math.ceil((8+8*state.marketMk)*mkDiscount())}; }
+
+function canAfford(cr, bom){
+  if(state.credits < cr) return false;
+  for(const r in (bom||{})) if((state.items[r]||0) < bom[r]) return false;
+  return true;
+}
+function pay(cr, bom){ state.credits-=cr; for(const r in (bom||{})) state.items[r]-=bom[r]; }
+
+/* =========================================================================
+   UNLOCKS (progressive tech path)
+   ========================================================================= */
+function machineUnlocked(key){
+  if(state.unlocked[key]) return true;
+  const req = MACHINES[key].unlock;
+  if(!req) { state.unlocked[key]=true; return true; }
+  for(const m in req) if((state.machines[m]||0) < req[m]) return false;
+  return true;
+}
+function refreshUnlocks(silent){
+  for(const key of MORDER){
+    if(state.unlocked[key]) continue;
+    const req = MACHINES[key].unlock;
+    let ok = !req;
+    if(req){ ok=true; for(const m in req){ if((state.machines[m]||0) < req[m]){ ok=false; break; } } }
+    if(ok){
+      state.unlocked[key]=true;
+      const m=MACHINES[key];
+      for(const r in m.in) state.unlocked["item:"+r]=true;
+      for(const r in m.out) state.unlocked["item:"+r]=true;
+      if(!silent){ toast(`🔓 Unlocked: ${m.n}`, "unlock"); SND.unlock(); }
+      structureDirty=true;
+    }
+  }
+  for(const key of GORDER){
+    if(state.unlocked["gen:"+key]) continue;
+    const req=GENERATORS[key].unlock; let ok=!req;
+    if(req){ ok=true; for(const m in req){ if((state.machines[m]||0) < req[m]){ ok=false; break; } } }
+    if(ok){ state.unlocked["gen:"+key]=true; if(!silent){ toast(`🔓 Power: ${GENERATORS[key].n} available`, "unlock"); SND.unlock(); } structureDirty=true; }
+  }
+}
+const itemUnlocked = id => !!state.unlocked["item:"+id];
+const genUnlocked  = key => !!state.unlocked["gen:"+key];
+
+/* =========================================================================
+   SIMULATION (backpressure: machines throttle when outputs are full)
+   ========================================================================= */
+function addCredits(g){ state.credits+=g; state.runCredits+=g; state.lifetimeCredits+=g; }
+// Resolve the power grid for this step: fuel-free generators + base grid are free; Steam Engines
+// burn Coal (only as much as demand needs) to fill the gap. Returns supply/demand ratio in [0,1].
+function computePower(dt){
+  const gm = genMult();
+  let free = gridBase()
+    + (state.generators.solar||0)  * GENERATORS.solar.power  * gm
+    + (state.generators.fusion||0) * GENERATORS.fusion.power * gm;
+  let demand = 0;
+  for(const key of MORDER){ const c=state.machines[key]||0; if(c>0) demand += DRAW[MACHINES[key].t]*c*mkMult(key); }
+  demand *= demandMult();
+  const steamCap = (state.generators.steam||0) * GENERATORS.steam.power * gm;
+  const wantPower = Math.min(steamCap, Math.max(0, demand - free));
+  const coalPerMW = (GENERATORS.steam.fuel.coal * fuelMult()) / (GENERATORS.steam.power * gm);
+  const coalWant = wantPower * coalPerMW * dt;
+  const coalUse  = Math.min(coalWant, state.items.coal||0);
+  const steamPower = coalWant>1e-12 ? wantPower * (coalUse/coalWant) : 0;
+  if(coalUse>0) state.items.coal -= coalUse;
+  const supply = free + steamPower;
+  // Accumulators: bank surplus, discharge to cover deficits.
+  const cap = (state.accumulators||0) * ACCUMULATOR.cap;
+  let charge = Math.min(state.charge||0, cap);      // clamp (cap can shrink on Restructure)
+  let ratio;
+  if(supply >= demand){
+    ratio = 1;
+    charge = Math.min(cap, charge + (supply - demand) * dt);
+  } else {
+    const use = Math.min(charge, (demand - supply) * dt);
+    charge -= use;
+    ratio = Math.min(1, (supply + use/dt) / demand);
+  }
+  state.charge = charge;
+  lastPower = {supply, demand, ratio, steamCap, free, charge, cap};
+  return ratio;
+}
+function simulate(dt, eff){
+  const gr = globalRate(), ie = inputEff(), re = rawEff(), mm = marketMult();
+  const inF = r => m.in[r] * ie * (ITEMS[r].t===0 ? re : 1);   // per-input amount (raw gets extra cut)
+  const pr = computePower(dt);                       // power throttles every consumer proportionally
+  var m;
+  for(const key of MORDER){
+    if(!state.unlocked[key]) continue;
+    m = MACHINES[key]; const count = state.machines[key]||0;
+    if(count<=0) continue;
+    let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * pr * dt;
+    for(const r in m.in){ cyc=Math.min(cyc, (state.items[r]||0)/inF(r)); }
+    for(const r in m.out){ const space=capOf(r)-(state.items[r]||0); cyc=Math.min(cyc, space/m.out[r]); }
+    cyc *= eff;
+    if(cyc<=0) continue;
+    for(const r in m.in)  state.items[r] -= inF(r)*cyc;
+    for(const r in m.out){ const add=m.out[r]*cyc; state.items[r]+=add; state.stats.produced+=add; state.stats.made[r]=(state.stats.made[r]||0)+add; }
+  }
+  // Trade terminals auto-sell chosen item
+  if(state.markets>0 && state.marketItem && ITEMS[state.marketItem]){
+    let cyc = state.markets * MARKET.rate * (1+0.5*state.marketMk) * gr * dt;
+    cyc = Math.min(cyc, (state.items[state.marketItem]||0));
+    cyc *= eff;
+    if(cyc>0){ state.items[state.marketItem]-=cyc; addCredits(cyc*ITEMS[state.marketItem].sell*mm); }
+  }
+}
+
+/* =========================================================================
+   GAME LOOP
+   ========================================================================= */
+// Auto-Builder: once unlocked, trickle-buy any machines/generators flagged for auto (1 each per
+// call), respecting credits + component costs so it never drains you dry.
+function autoBuild(){
+  if(st("auto")<=0 || !state.autoOn) return;
+  let changed=false;
+  if(state.autoBalance && (state.maxAge||1)>=4){
+    // Auto-Balance (Age IV): repeatedly buy the flagged machine whose output buffer is emptiest
+    // (i.e. most-demanded downstream), keeping the chain's ratios balanced automatically.
+    for(let i=0;i<25;i++){
+      let best=null,bestFill=Infinity,bestP=null,bestBom=null;
+      for(const k of MORDER){ if(!state.auto[k]||!state.unlocked[k]) continue;
+        const p=planMachine(k,1); if(p.n<=0) continue; const bom=scaleBOM(buildBOM(k),p.n); if(!canAfford(p.cost,bom)) continue;
+        const out=Object.keys(MACHINES[k].out)[0]; const fill=(state.items[out]||0)/capOf(out);
+        if(fill<bestFill){ bestFill=fill; best=k; bestP=p; bestBom=bom; } }
+      if(!best) break;
+      pay(bestP.cost,bestBom); state.machines[best]+=bestP.n; state.stats.built+=bestP.n; changed=true;
+    }
+  } else {
+    for(const k of MORDER){ if(state.auto[k] && state.unlocked[k]){
+      const p=planMachine(k,1); if(p.n>0){ const bom=scaleBOM(buildBOM(k),p.n);
+        if(canAfford(p.cost,bom)){ pay(p.cost,bom); state.machines[k]+=p.n; state.stats.built+=p.n; changed=true; } } } }
+  }
+  for(const k of GORDER){ if(state.auto["gen:"+k] && genUnlocked(k)){
+    const p=planGenerator(k,1); if(p.n>0){ const bom=scaleBOM(GENERATORS[k].build.bom,p.n);
+      if(canAfford(p.cost,bom)){ pay(p.cost,bom); state.generators[k]+=p.n; state.stats.built+=p.n; changed=true; } } } }
+  if(changed) refreshUnlocks(false);
+}
+function checkMilestones(){
+  let any=false;
+  for(const m of MILESTONES){ if(!state.milestones[m.id] && m.cond()){ state.milestones[m.id]=true; any=true; toast(`🏅 Achievement: ${m.name}`,"unlock"); } }
+  if(any){ recomputeStats(); SND.goal(); }
+}
+function checkAgeGoals(){
+  let any=false;
+  for(let a=1;a<=6;a++){ const g=AGE_GOALS[a]; if(!g||state.ageGoals[a]) continue;
+    if((state.stats.made[g.item]||0) >= g.n){ state.ageGoals[a]=true; any=true; screenFlash(); toast(`🏆 Age ${ROMAN[a]} mastered: ${g.desc}!`,"unlock"); } }
+  if(any){ recomputeStats(); SND.goal(); }
+}
+let lastReal = Date.now();
+function tick(){
+  const now=Date.now(); let dt=(now-lastReal)/1000; lastReal=now;
+  if(dt<0)dt=0; if(dt>5)dt=5;
+  const before={credit:state.credits}; for(const k in ITEMS) before[k]=state.items[k];
+  simulate(dt,1);
+  refreshUnlocks(false);
+  checkMilestones();
+  checkAgeGoals();
+  grantTP();
+  const _age=currentAge();
+  if(_age>(state.age||1)){ const first=_age>(state.maxAge||1); state.age=_age; if(first){ state.maxAge=_age; recomputeStats(); } onNewAge(_age, first); }
+  else if(_age<(state.age||1)) state.age=_age;   // dropped back after a Restructure — silent
+  if(sessionAgeTimes[_age]===undefined) sessionAgeTimes[_age]=(Date.now()-sessionStart)/1000;   // HUD pacing
+  if(dt>0){ const k=Math.min(1,dt*3);
+    for(const r in ITEMS) rate[r]+=((state.items[r]-before[r])/dt - rate[r])*k;
+    rate.credit+=((state.credits-before.credit)/dt - rate.credit)*k;
+  }
+  updateUI();
+}
+
+/* =========================================================================
+   FORMAT
+   ========================================================================= */
+function fmt(n){
+  if(!isFinite(n)) return "∞";
+  const neg=n<0; n=Math.abs(n); let s;
+  if(n<1000) s=(n>=100||Number.isInteger(n))?Math.floor(n).toString():n.toFixed(n<10?2:1);
+  else{ const u=["K","M","B","T","Qa","Qi","Sx","Sp"]; let i=-1,x=n;
+    while(x>=1000&&i<u.length-1){x/=1000;i++;}
+    s=x.toFixed(x<10?2:x<100?1:0)+u[i];
+    if(i>=u.length-1&&x>=1000) s=n.toExponential(2);
+  }
+  return (neg?"-":"")+s;
+}
+const money = n => "$"+fmt(n);
+function rateStr(v){ const s=(v>=0?"+":"")+fmt(v)+"/s";
+  return `<span class="${v>0.001?'pos':v<-0.001?'neg':'muted'}">${s}</span>`; }
+function dur(sec){ sec=Math.floor(sec); const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;
+  return h>0?`${h}h ${m}m`:m>0?`${m}m ${s}s`:`${s}s`; }
+function bomStr(bom){ return Object.keys(bom||{}).map(r=>`${fmt(bom[r])}${ITEMS[r].ic}`).join(" "); }
+function recipeStr(m){
+  const part=(o)=>Object.keys(o).map(r=>{
+    const short=(state.items[r]||0) < (o[r]*inputEff()) && (m.in&&m.in[r]);
+    return `<span class="${short?'miss':''}">${o[r]===1?'':fmt(o[r])}${ITEMS[r].ic}</span>`;
+  }).join(" ");
+  const inS = Object.keys(m.in).length? part(m.in) : "—";
+  return `${inS} → ${part(m.out)}`;
+}
+
+/* =========================================================================
+   UI
+   ========================================================================= */
+const el = id => document.getElementById(id);
+let structureDirty = true;                        // rebuild card/chip lists when unlock set changes
+function resetStructureDOM(){                      // force full rebuild of dynamic lists (prestige/import/reset)
+  structureDirty=true;
+  el("machines").dataset.built="";
+  el("ticker").innerHTML="";
+  el("marketSel").dataset.count="";
+  el("generators").dataset.count="";
+}
+function ensureTicker(){
+  const host=el("ticker"); const shown=new Set([...host.children].map(c=>c.dataset.id));
+  for(const id in ITEMS){
+    if(!itemUnlocked(id) || shown.has(id)) continue;
+    const it=ITEMS[id]; const d=document.createElement("div"); d.className="chip"; d.dataset.id=id;
+    d.style.borderColor=`color-mix(in srgb, var(--t${it.t}) 30%, var(--border))`;
+    d.innerHTML=`<div class="h"><span class="ic">${it.ic}</span><span class="nm">${it.n}</span>
+      <span class="sell" data-sell="${id}" title="Sell all for Credits">$</span></div>
+      <div class="v num" id="amt-${id}">0</div>
+      <div class="r"><span id="rate-${id}"></span> <span class="cap" id="cap-${id}"></span></div>
+      <div class="bar" id="bar-${id}"></div>`;
+    host.appendChild(d);
+  }
+}
+function ensureMachines(){
+  const host=el("machines"); if(host.dataset.built && !structureDirty) return;
+  // group by age, only unlocked
+  let html="";
+  for(let age=1;age<=6;age++){
+    const keys=MORDER.filter(k=>TIER_AGE[MACHINES[k].t]===age && state.unlocked[k]);
+    if(!keys.length) continue;
+    html+=`<div class="tier-h">${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n}</div>`;
+    for(const k of keys){
+      const m=MACHINES[k];
+      html+=`<div class="mc" id="mc-${k}">
+        <div class="ic">${m.ic}</div>
+        <div>
+          <div class="name">${m.n} <span class="mk" id="mk-${k}">Mk 0</span> <span class="cnt num" id="cnt-${k}">×0</span></div>
+          <div class="rec" id="rec-${k}"></div>
+          <div class="st" id="st-${k}"></div>
+        </div>
+        <div class="btns">
+          <button class="b" id="buy-${k}" data-buy="${k}"></button>
+          <button class="b mk" id="mkbuy-${k}" data-mk="${k}"></button>
+          <button class="b autob" id="autob-${k}" data-auto="${k}" style="display:none">Auto</button>
+        </div>
+      </div>`;
+    }
+  }
+  host.innerHTML=html; host.dataset.built="1";
+}
+/* ---- Advancement tree UI (pan/zoom SVG, click to allocate) ---- */
+function nodeAvailable(id){
+  if(id==="start" || state.allocated[id]) return false;
+  const n=NODES[id]; if(!n) return false;
+  for(const l of n.links) if(state.allocated[l]) return true;   // adjacent to an allocated node
+  return false;
+}
+function allocateNode(id){
+  if(!nodeAvailable(id)) return;
+  const n=NODES[id]; if(state.blueprints < n.cost){ toast("Need more 📐 Blueprints."); return; }
+  state.blueprints -= n.cost; state.allocated[id]=true; state.stats.allocs++; recomputeStats();
+  renderTree(); updateUI(); SND.build(); toast(`Allocated: ${n.name}`,"unlock");
+}
+// A node is refundable only if removing it keeps every other allocated node connected to the Core.
+function removable(id){
+  if(id==="start" || !state.allocated[id]) return false;
+  const seen={start:true}, q=["start"];
+  while(q.length){ const c=q.pop(); for(const l of NODES[c].links){
+    if(l===id) continue; if(state.allocated[l] && !seen[l]){ seen[l]=true; q.push(l); } } }
+  for(const k in state.allocated){ if(k===id || k==="start") continue; if(state.allocated[k] && !seen[k]) return false; }
+  return true;
+}
+function refundNode(id){
+  if(!state.allocated[id] || id==="start") return;
+  if(!removable(id)){ toast("Can't refund — other nodes path through it."); return; }
+  const n=NODES[id]; state.blueprints+=n.cost; delete state.allocated[id];
+  recomputeStats(); renderTree(); updateUI(); toast(`Refunded: ${n.name} (+${n.cost} 📐)`);
+}
+function respecAll(){
+  let refund=0; for(const k in state.allocated){ if(k!=="start" && state.allocated[k] && NODES[k]) refund+=NODES[k].cost; }
+  if(refund<=0){ toast("Nothing allocated yet."); return; }
+  openModal(`<h3>↺ Respec the whole tree?</h3>
+    <p class="muted">Un-allocates every node and refunds <b>${fmt(refund)} 📐 Blueprints</b>.</p>
+    <div class="rw"><button data-close>Cancel</button><button class="primary" id="doRespec">Refund all</button></div>`);
+  el("doRespec").onclick=()=>{ let rf=0; for(const k in state.allocated){ if(k!=="start" && state.allocated[k] && NODES[k]) rf+=NODES[k].cost; }
+    state.allocated={start:true}; state.blueprints+=rf; recomputeStats(); closeModal(); renderTree(); updateUI();
+    toast(`Respec complete: +${fmt(rf)} 📐`,"unlock"); };
+}
+function upgradeTalent(id){
+  const t=TALENTS.find(x=>x.id===id); if(!t) return;
+  const r=state.talents[id]||0; if(r>=t.max || !tierUnlocked(t.tier)) return;
+  const cost=talentCost(t,r); if(state.talentPoints<cost) return;
+  state.talentPoints-=cost; state.talents[id]=r+1; recomputeStats(); updateUI(); SND.build();
+  toast(`${t.name} → rank ${r+1}`);
+}
+let cam={x:0,y:0,z:0.55}, treeDrag=null, treeDragged=false, treeMode="alloc";
+function applyCam(){ const g=el("treeCam"); if(g) g.setAttribute("transform",`translate(${cam.x} ${cam.y}) scale(${cam.z})`); }
+function centerTree(){ const w=el("treeWrap"), ww=w.clientWidth||900, wh=w.clientHeight||560;
+  cam.x=ww/2 - cam.z*CX; cam.y=wh/2 - cam.z*CY; applyCam(); }
+function buildTree(){
+  let e=""; EDGES.forEach((ed,i)=>{ const a=NODES[ed[0]], b=NODES[ed[1]];
+    e+=`<line class="tedge" data-edge="${i}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`; });
+  let ns=""; for(const id in NODES){ const n=NODES[id];
+    const r=n.type==="start"?26:n.type==="keystone"?22:n.type==="notable"?15:9;
+    ns+=`<g data-node="${id}" transform="translate(${n.x} ${n.y})"><circle class="tnode t-${n.type}" r="${r}"></circle>`;
+    const ic=n.type==="start"?"⚙":n.type==="keystone"?"★":n.type==="notable"?"◆":"";
+    if(ic) ns+=`<text class="tic" font-size="${Math.round(r*1.05)}">${ic}</text>`;
+    ns+="</g>";
+  }
+  el("treeSvg").innerHTML=`<g id="treeCam">${e}${ns}</g>`;
+  cam.z=0.55; centerTree(); renderTree();
+}
+function renderTree(){
+  const svg=el("treeSvg"); if(!svg || !svg.firstChild) return;
+  svg.querySelectorAll("[data-node]").forEach(g=>{ const id=g.dataset.node, n=NODES[id];
+    let cls="tnode t-"+n.type+" ";
+    if(state.allocated[id]){ cls+="on"; if(treeMode==="refund" && removable(id)) cls+=" refundable"; }
+    else if(nodeAvailable(id)) cls+=(state.blueprints>=n.cost?"avail":"avail poor");
+    else cls+="lock";
+    g.firstChild.setAttribute("class",cls);
+  });
+  svg.querySelectorAll("[data-edge]").forEach(l=>{ const ed=EDGES[+l.dataset.edge];
+    l.setAttribute("class","tedge"+((state.allocated[ed[0]]&&state.allocated[ed[1]])?" on":"")); });
+  const total=Object.keys(NODES).length-1, got=Object.keys(state.allocated).filter(k=>k!=="start"&&state.allocated[k]).length;
+  const ct=el("treeCount"); if(ct) ct.textContent=`${got}/${total} nodes · 📐 ${fmt(state.blueprints)}`;
+}
+function ensureMarketSel(){
+  const sel=el("marketSel");
+  const want=Object.keys(ITEMS).filter(itemUnlocked);
+  if(sel.dataset.count==String(want.length)) return;
+  sel.innerHTML=want.map(id=>`<option value="${id}">${ITEMS[id].ic} ${ITEMS[id].n} — ${money(ITEMS[id].sell)}</option>`).join("");
+  sel.value=state.marketItem; sel.dataset.count=String(want.length);
+}
+function ensureGenerators(){
+  const host=el("generators"); const cnt=GORDER.filter(genUnlocked).length;
+  if(host.dataset.count==String(cnt)) return;
+  host.innerHTML=GORDER.filter(genUnlocked).map(k=>{
+    const g=GENERATORS[k];
+    const fuel=g.fuel?Object.keys(g.fuel).map(r=>`${g.fuel[r]}${ITEMS[r].ic}/s`).join(" "):"no fuel";
+    return `<div class="mc" id="gc-${k}"><div class="ic">${g.ic}</div>
+      <div><div class="name">${g.n} <span class="cnt num" id="gcnt-${k}">×0</span></div>
+      <div class="rec">+${fmt(g.power)} MW · ${fuel}</div><div class="st" id="gst-${k}"></div></div>
+      <div class="btns"><button class="b" id="gbuy-${k}" data-gen="${k}"></button>
+      <button class="b autob" id="gautob-${k}" data-gauto="${k}" style="display:none">Auto</button></div></div>`;
+  }).join("");
+  host.dataset.count=String(cnt);
+}
+function ensureAchievements(){
+  const host=el("achList"); if(host.dataset.built) return;
+  host.innerHTML=MILESTONES.map(m=>`<div class="mc ach" id="ach-${m.id}">
+    <div class="ic" id="achic-${m.id}">🔒</div>
+    <div><div class="name">${m.name}</div><div class="rec">${m.desc}</div>
+    <div class="st" id="acheff-${m.id}"></div></div></div>`).join("");
+  host.dataset.built="1";
+}
+function scaleEff(per, r){ const o={}; for(const k in per) o[k]=per[k]*r; return o; }
+function ensureTalents(){
+  const host=el("talents"); if(host.dataset.built) return;
+  let html="";
+  for(let tier=1;tier<=3;tier++){
+    html+=`<div class="tier-h" id="ttier-${tier}">Tier ${tier}</div>`;
+    for(const t of TALENTS.filter(x=>x.tier===tier)){
+      html+=`<div class="mc" id="tal-${t.id}"><div class="ic">🎯</div>
+        <div><div class="name">${t.name} <span class="mk" id="talr-${t.id}">0/${t.max}</span></div>
+        <div class="rec">${t.desc}</div><div class="st muted" id="talcur-${t.id}"></div></div>
+        <div class="btns"><button class="b mk" id="talbuy-${t.id}" data-talent="${t.id}"></button></div></div>`;
+    }
+  }
+  host.innerHTML=html; host.dataset.built="1";
+}
+
+function updateUI(){
+  el("ver").textContent="v"+VERSION;
+  el("soundToggle").textContent = state.sound?"🔊":"🔇";
+  el("hudToggle").classList.toggle("on", !!state.hud);
+  updateHUD();
+  el("credits").textContent=money(state.credits);
+  el("income").innerHTML=rateStr(rate.credit);
+  el("bp").textContent=fmt(state.blueprints);
+  el("clickAmt").textContent="+"+fmt(orePerClick());
+  el("objective").innerHTML="🎯 "+currentObjective();
+  { const ca=currentAge(), A=AGES[ca], g=AGE_GOALS[ca];
+    const rec = state.maxAge>ca ? `record: Age ${ROMAN[state.maxAge]}` : (ca<6 ? `next: Age ${ROMAN[ca+1]}` : "max age");
+    let goal="";
+    if(g){ goal = state.ageGoals[ca]
+      ? `<span class="pos" style="font-size:12px">· 🏆 age mastered</span>`
+      : `<span class="muted" style="font-size:12px">· 🏆 ${g.desc}: ${fmt(Math.floor(state.stats.made[g.item]||0))}/${fmt(g.n)}</span>`; }
+    el("agebar").innerHTML=`${A.ic} <b>Age ${ROMAN[ca]} — ${A.n}</b> ${goal}<span class="rec">${rec}</span>`; }
+  { const showWF=(state.maxAge>=5)||(state.deployed>0)||((state.items.robot||0)>=1);
+    el("workforcePanel").style.display=showWF?"":"none";
+    if(showWF){ const avail=Math.floor(state.items.robot||0);
+      el("wfDeployed").textContent=fmt(state.deployed||0);
+      el("wfBonus").textContent="+"+Math.round(workforceBonus()*100)+"%";
+      el("wfHint").textContent=`${fmt(avail)} robot${avail===1?"":"s"} available to deploy`;
+      el("wfDeploy1").disabled=avail<1; el("wfDeploy10").disabled=avail<1; el("wfDeployMax").disabled=avail<1;
+      el("wfRecall").disabled=(state.deployed||0)<1;
+    } }
+
+  ensureTicker(); ensureMachines(); ensureMarketSel(); ensureGenerators(); ensureAchievements(); ensureTalents();
+  structureDirty=false;
+  const autoOn = st("auto")>0;
+
+  // ticker
+  for(const id in ITEMS){
+    if(!itemUnlocked(id)) continue;
+    const cap=capOf(id), amt=state.items[id]||0;
+    el("amt-"+id).textContent=fmt(amt);
+    el("rate-"+id).innerHTML=rateStr(rate[id]);
+    el("cap-"+id).textContent="/ "+fmt(cap);
+    const bar=el("bar-"+id); bar.style.width=Math.min(100,amt/cap*100)+"%";
+    el("amt-"+id).parentElement.parentElement.classList.toggle("full", amt>=cap-1e-6);
+  }
+  // machines
+  for(const k of MORDER){
+    if(!state.unlocked[k]) continue;
+    const m=MACHINES[k], count=state.machines[k]||0;
+    el("cnt-"+k).textContent="×"+fmt(count);
+    el("mk-"+k).textContent="Mk "+(state.mk[k]||0);
+    el("rec-"+k).innerHTML=recipeStr(m);
+    // status
+    let st="";
+    if(count>0){
+      const outId=Object.keys(m.out)[0];
+      let starved=false; for(const r in m.in){ if((state.items[r]||0) < m.in[r]*inputEff()*0.001) starved=true; }
+      const full = (state.items[outId]||0) >= capOf(outId)-1e-6;
+      const thr = (m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k);
+      if(full) st=`<span class="warn">■ output full</span>`;
+      else if(starved) st=`<span class="neg">⚠ starved of inputs</span>`;
+      else st=`<span class="muted">≈ ${fmt(thr)}${ITEMS[outId].ic}/s</span>`;
+    }
+    el("st-"+k).textContent="";
+    el("st-"+k).innerHTML=st;
+    el("mc-"+k).classList.toggle("run", count>0 && rate[Object.keys(m.out)[0]]>0.001);
+    // buy button (batch-aware: respects ×1/×10/Max + component stock)
+    const bp=planMachine(k, capNum()), bbom=buildBOM(k);
+    const buy=el("buy-"+k); buy.disabled=bp.n<=0; buy.classList.toggle("can", bp.n>0);
+    buy.innerHTML=`Build ×${bp.n>0?bp.n:1}<small>${money(bp.n>0?bp.cost:bp.unit)}${Object.keys(bbom).length?" · "+bomStr(scaleBOM(bbom,Math.max(1,bp.n))):""}</small>`;
+    // mk button
+    const mcr=mkCredits(k), mbom=mkBOM(k), mcan=canAfford(mcr,mbom);
+    const mkb=el("mkbuy-"+k); mkb.disabled=!mcan; mkb.classList.toggle("can",mcan);
+    mkb.innerHTML=`Mk ${(state.mk[k]||0)+1} <small>+50% · ${money(mcr)} · ${bomStr(mbom)}</small>`;
+    const ab=el("autob-"+k); ab.style.display=autoOn?"":"none";
+    if(autoOn){ ab.classList.toggle("on",!!state.auto[k]); ab.textContent=state.auto[k]?"Auto ✓":"Auto"; }
+  }
+  // advancement tree — refresh node states only while its tab is visible (cheap)
+  if(el("tab-tree").classList.contains("on")) renderTree();
+  // storage tab (batch-aware)
+  el("whCount").textContent=fmt(state.warehouses);
+  el("whMult").textContent="×"+capMult().toFixed(2);
+  const wp=planWarehouse(capNum());
+  el("btnWarehouse").disabled=wp.n<=0; el("btnWarehouse").classList.toggle("can",wp.n>0);
+  el("btnWarehouse").innerHTML=`Build Warehouse ×${wp.n>0?wp.n:1}<small>${money(wp.n>0?wp.cost:wp.unit)} · ${bomStr(scaleBOM(WAREHOUSE.bom,Math.max(1,wp.n)))}</small>`;
+  const mp=planMarket(capNum());
+  el("btnMarket").disabled=mp.n<=0; el("btnMarket").classList.toggle("can",mp.n>0);
+  el("btnMarket").innerHTML=`Build Trade Terminal ×${mp.n>0?mp.n:1}<small>${money(mp.n>0?mp.cost:mp.unit)} · ${bomStr(scaleBOM(MARKET.bom,Math.max(1,mp.n)))}</small>`;
+  el("marketCount").textContent=fmt(state.markets);
+  el("marketMk").textContent=fmt(state.marketMk);
+  const mmc=marketMkCredits(), mmb=marketMkBOM(), mmcan=canAfford(mmc,mmb);
+  el("btnMarketMk").disabled=!mmcan||state.markets<1; el("btnMarketMk").classList.toggle("can",mmcan&&state.markets>0);
+  el("btnMarketMk").innerHTML=`Upgrade Terminal Mk ${state.marketMk+1}<small>${money(mmc)} · ${bomStr(mmb)}</small>`;
+
+  // power (header + Power tab) + generators
+  const pr=lastPower;
+  const pe=el("power"); pe.textContent=Math.round(pr.ratio*100)+"%";
+  pe.className="v num "+(pr.ratio>=0.999?"pos":pr.ratio>=0.5?"warn":"neg");
+  pe.title=fmt(pr.supply)+" / "+fmt(pr.demand)+" MW";
+  el("pwSupply").textContent=fmt(pr.supply)+" MW";
+  el("pwDemand").textContent=fmt(pr.demand)+" MW";
+  el("pwRatio").textContent=Math.round(pr.ratio*100)+"%";
+  const pf=el("pwFill"); pf.style.width=Math.min(100, pr.demand>0?pr.supply/pr.demand*100:100)+"%";
+  pf.style.background=pr.ratio>=0.999?"var(--good)":pr.ratio>=0.5?"var(--warn)":"var(--bad)";
+  el("pwNote").innerHTML = pr.ratio<0.999
+    ? `<span class="warn">⚠ Under-powered — the whole factory runs at ${Math.round(pr.ratio*100)}%. Build generators. (Steam Engines burn Coal, which competes with smelting.)</span>`
+    : `Grid healthy. Base grid supplies ${BASE_GRID} MW free; each machine draws power by tier (scaled by Mk).`;
+  for(const k of GORDER){ if(!genUnlocked(k)) continue;
+    el("gcnt-"+k).textContent="×"+fmt(state.generators[k]||0);
+    const g=GENERATORS[k], gp=planGenerator(k, capNum());
+    const gb=el("gbuy-"+k); gb.disabled=gp.n<=0; gb.classList.toggle("can",gp.n>0);
+    gb.innerHTML=`Build ×${gp.n>0?gp.n:1}<small>${money(gp.n>0?gp.cost:gp.unit)} · ${bomStr(scaleBOM(g.build.bom,Math.max(1,gp.n)))}</small>`;
+    if(g.fuel){ const out=(state.generators[k]||0)>0 && (state.items.coal||0)<0.001;
+      el("gst-"+k).innerHTML = out?`<span class="neg">⚠ out of Coal — no power</span>`:""; }
+    const gab=el("gautob-"+k); gab.style.display=autoOn?"":"none";
+    if(autoOn){ gab.classList.toggle("on",!!state.auto["gen:"+k]); gab.textContent=state.auto["gen:"+k]?"Auto ✓":"Auto"; }
+  }
+  // generator unlock hint (so the Power tab isn't a confusing empty panel)
+  const gLocked=GORDER.filter(k=>!genUnlocked(k)), gh=el("genHint");
+  if(gLocked.length){ const g=GENERATORS[gLocked[0]];
+    const reqTxt=Object.keys(g.unlock).map(m=>`${g.unlock[m]}× ${MACHINES[m].n}`).join(", ");
+    gh.innerHTML = GORDER.some(genUnlocked)
+      ? `🔒 Next generator: <b>${g.n}</b> — build ${reqTxt} to unlock.`
+      : `🔒 No generators unlocked yet. Build ${reqTxt} (in the 🏭 Factory tab) to unlock the <b>${g.n}</b>. Until then, the ${BASE_GRID} MW base grid powers your factory for free.`;
+  } else gh.textContent="";
+  // accumulators (Age III power buffer)
+  { const accShow=(state.machines.circuitFab>0)||(state.accumulators>0);
+    el("accPanel").style.display=accShow?"":"none";
+    if(accShow){ const cap=(state.accumulators||0)*ACCUMULATOR.cap;
+      el("accCharge").textContent=fmt(state.charge||0)+" / "+fmt(cap)+" MWh";
+      const f=el("accFill"); f.style.width=(cap>0?Math.min(100,(state.charge||0)/cap*100):0)+"%"; f.style.background="var(--t3)";
+      const ap=planAccumulator(capNum()); const b=el("buildAcc"); b.disabled=ap.n<=0; b.classList.toggle("can",ap.n>0);
+      b.innerHTML=`Build Accumulator ×${ap.n>0?ap.n:1}<small>+${ACCUMULATOR.cap*Math.max(1,ap.n)} MWh · ${money(ap.n>0?ap.cost:ap.unit)} · ${bomStr(scaleBOM(ACCUMULATOR.bom,Math.max(1,ap.n)))}</small>`;
+      el("accHint").textContent=`${fmt(state.accumulators||0)} built`;
+    } }
+  // master Auto-Build toggle + Auto-Balance (Age IV)
+  const at=el("autoToggle"); at.style.display=autoOn?"":"none";
+  if(autoOn){ at.classList.toggle("can",state.autoOn); at.innerHTML=`🤖 Auto-Build: ${state.autoOn?"ON":"OFF"}`; }
+  const abt=el("autoBalanceToggle"), showAB=autoOn && (state.maxAge||1)>=4;
+  abt.style.display=showAB?"":"none";
+  if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-buy the most-starved machine to keep ratios balanced (Age IV)"; }
+  // talents (only when the Talents tab is visible)
+  if(el("tab-talents").classList.contains("on")){
+    el("tpCount").textContent="✦ "+fmt(state.talentPoints)+" TP";
+    for(let tier=1;tier<=3;tier++){ const un=tierUnlocked(tier);
+      el("ttier-"+tier).innerHTML=`Tier ${tier}`+(un?"":` <span class="muted" style="text-transform:none;letter-spacing:0">— locked · spend ${TIER_REQ[tier]} ✦ total to unlock</span>`);
+    }
+    for(const t of TALENTS){ const r=state.talents[t.id]||0, un=tierUnlocked(t.tier), maxed=r>=t.max, cost=talentCost(t,r);
+      el("talr-"+t.id).textContent=`${r}/${t.max}`;
+      el("talcur-"+t.id).textContent = r>0?("current: "+effText(scaleEff(t.per,r))):"";
+      const b=el("talbuy-"+t.id), can = un && !maxed && state.talentPoints>=cost;
+      b.disabled=!can; b.classList.toggle("can",can);
+      b.innerHTML = maxed?"MAX" : (!un?"🔒 locked" : `Upgrade <small>✦ ${cost}</small>`);
+    }
+  }
+  // patents (deep prestige layer, only when its tab is visible)
+  if(el("tab-patents").classList.contains("on")){
+    el("patCount").textContent="⚛ "+fmt(state.patents||0);
+    if(!patentsUnlocked()){
+      el("patentBody").innerHTML=`<p class="muted">🔒 Unlocks once you've earned <b>${PATENT_UNLOCK} 📐 Blueprints</b> in total (so far: ${fmt(state.stats.bpEarned||0)}). Patents are a late-game reset granting permanent global bonuses.</p>`;
+    } else {
+      const pg=patentAvailable();
+      let html=`<div class="toolrow"><button class="b mk" id="filePatent" style="max-width:290px" ${pg<1?"disabled":""}>⚛ File Patent<small>${pg>=1?"+"+fmt(pg)+" ⚛ · resets factory, Blueprints &amp; tree":"earn more Blueprints this cycle"}</small></button>
+        <span class="muted" style="font-size:12px">This cycle: <b>${fmt(state.bpCycle||0)}</b> 📐 earned. Talents, Achievements &amp; Patents are kept.</span></div>
+        <div class="grid" style="margin-top:10px">`;
+      for(const p of PATENTS){ const l=state.patentUpg[p.id]||0, cost=patentCost(p,l), can=(state.patents||0)>=cost;
+        html+=`<div class="mc"><div class="ic">⚛</div><div><div class="name">${p.name} <span class="mk">Lv ${l}</span></div><div class="rec">${p.desc}</div><div class="st muted">${l>0?"current: "+effText(scaleEff(p.per,l)):""}</div></div>
+          <div class="btns"><button class="b mk${can?' can':''}" data-patent="${p.id}" ${can?'':'disabled'}>Upgrade <small>⚛ ${cost}</small></button></div></div>`;
+      }
+      el("patentBody").innerHTML=html+`</div>`;
+    }
+  }
+  // achievements + age goals (only when Stats tab visible)
+  if(el("tab-stats").classList.contains("on")){
+    el("ageGoalList").innerHTML=[1,2,3,4,5,6].map(a=>{ const g=AGE_GOALS[a], done=!!state.ageGoals[a], made=Math.floor(state.stats.made[g.item]||0);
+      return `<div class="mc ach${done?' done':''}"><div class="ic">${done?'🏆':AGES[a].ic}</div>
+        <div><div class="name">Age ${ROMAN[a]} — ${AGES[a].n}</div>
+        <div class="rec">${g.desc} · ${fmt(Math.min(made,g.n))}/${fmt(g.n)} ${ITEMS[g.item].ic}</div>
+        <div class="st"><span class="${done?'pos':'muted'}">${done?'✓ ':''}reward: ${effText(g.eff)}</span></div></div></div>`;
+    }).join("");
+    for(const m of MILESTONES){ const done=!!state.milestones[m.id];
+      el("achic-"+m.id).textContent=done?"🏅":"🔒";
+      el("ach-"+m.id).classList.toggle("done",done);
+      el("acheff-"+m.id).innerHTML=`<span class="${done?'pos':'muted'}">${done?'✓ ':''}reward: ${effText(m.eff)}</span>`;
+    }
+    el("achCount").textContent=`${Object.values(state.milestones).filter(Boolean).length} / ${MILESTONES.length}`;
+  }
+  // prestige
+  const gain=bpFor(state.runCredits);
+  el("btnPrestige").disabled=gain<1;
+  el("prestigeSub").textContent=gain>=1?("+"+fmt(gain)+" 📐"):("need "+money(PRESTIGE_SCALE));
+  // stats + offline note
+  updateStats();
+}
+function updateStats(){
+  let totM=0; for(const k in state.machines) totM+=state.machines[k];
+  el("statList").innerHTML=
+    `<div class="kv"><span>Current age</span><b>${AGES[currentAge()].ic} Age ${ROMAN[currentAge()]} — ${AGES[currentAge()].n}</b></div>
+     <div class="kv"><span>Highest age reached</span><b>Age ${ROMAN[state.maxAge||1]} (permanent +${Math.round(((state.maxAge||1)-1)*10)}% production)</b></div>
+     <div class="kv"><span>Credits / sec</span><b>${fmt(rate.credit)}</b></div>
+     <div class="kv"><span>Credits this run</span><b>${money(state.runCredits)}</b></div>
+     <div class="kv"><span>Lifetime credits</span><b>${money(state.lifetimeCredits)}</b></div>
+     <div class="kv"><span>Machines built</span><b>${fmt(totM)}</b></div>
+     <div class="kv"><span>Restructures</span><b>${fmt(state.prestiges)}</b></div>
+     <div class="kv"><span>Blueprints</span><b>${fmt(state.blueprints)}</b></div>
+     <div class="kv"><span>Next Restructure yields</span><b>${fmt(bpFor(state.runCredits))} 📐</b></div>
+     <div class="kv"><span>Storage multiplier</span><b>×${capMult().toFixed(2)}</b></div>`;
+  el("offlineNote").textContent=`Offline cap ${dur(offlineCap())} @ ${Math.round(offlineEff()*100)}% efficiency · autosaves every 5s · v${VERSION}`;
+}
+
+/* =========================================================================
+   ACTIONS
+   ========================================================================= */
+function buildMachine(k){ if(!state.unlocked[k])return; const p=planMachine(k,capNum()); if(p.n<=0)return; const bom=scaleBOM(buildBOM(k),p.n);
+  if(!canAfford(p.cost,bom))return; pay(p.cost,bom); state.machines[k]=(state.machines[k]||0)+p.n; state.stats.built+=p.n; SND.build(); refreshUnlocks(false); updateUI(); }
+function mkMachine(k){ const cr=mkCredits(k),bom=mkBOM(k); if(!canAfford(cr,bom))return;
+  pay(cr,bom); state.mk[k]=(state.mk[k]||0)+1; SND.build(); updateUI(); }
+function buildGenerator(k){ if(!genUnlocked(k))return; const p=planGenerator(k,capNum()); if(p.n<=0)return; const bom=scaleBOM(GENERATORS[k].build.bom,p.n);
+  if(!canAfford(p.cost,bom))return; pay(p.cost,bom); state.generators[k]=(state.generators[k]||0)+p.n; state.stats.built+=p.n; SND.build(); updateUI(); }
+function buildWarehouse(){ const p=planWarehouse(capNum()); if(p.n<=0)return; const bom=scaleBOM(WAREHOUSE.bom,p.n);
+  if(!canAfford(p.cost,bom))return; pay(p.cost,bom); state.warehouses+=p.n; SND.build(); updateUI(); }
+const planAccumulator = cap => planBuild(ACCUMULATOR.base, ACCUMULATOR.mult, state.accumulators||0, ACCUMULATOR.bom, cap);
+function buildAccumulator(){ const p=planAccumulator(capNum()); if(p.n<=0)return; const bom=scaleBOM(ACCUMULATOR.bom,p.n);
+  if(!canAfford(p.cost,bom))return; pay(p.cost,bom); state.accumulators=(state.accumulators||0)+p.n; SND.build(); updateUI(); }
+function buildMarket(){ const p=planMarket(capNum()); if(p.n<=0)return; const bom=scaleBOM(MARKET.bom,p.n);
+  if(!canAfford(p.cost,bom))return; pay(p.cost,bom); state.markets+=p.n; SND.build(); updateUI(); }
+function mkMarket(){ if(state.markets<1)return; const cr=marketMkCredits(),bom=marketMkBOM(); if(!canAfford(cr,bom))return;
+  pay(cr,bom); state.marketMk++; SND.build(); updateUI(); }
+function sellAll(id){ const amt=state.items[id]||0; if(amt<=0)return 0;
+  const g=amt*ITEMS[id].sell*marketMult(); state.items[id]=0; addCredits(g);
+  sessionClicks++; SND.sell(); toast(`Sold ${fmt(amt)} ${ITEMS[id].n} → ${money(g)}`); updateUI(); return g; }
+function mine(){ const cap=capOf("ironOre"), amt=orePerClick(); state.items.ironOre=Math.min(cap,(state.items.ironOre||0)+amt); state.stats.produced+=amt; sessionClicks++; SND.click(); updateUI(); }
+function deployRobots(n){ const have=Math.floor(state.items.robot||0); n=Math.min(n,have); if(n<=0)return;
+  state.items.robot-=n; state.deployed=(state.deployed||0)+n; recomputeStats(); updateUI(); }
+function recallRobots(n){ const space=Math.floor(capOf("robot")-(state.items.robot||0)); n=Math.min(n, state.deployed||0, Math.max(0,space)); if(n<=0)return;
+  state.deployed-=n; state.items.robot=(state.items.robot||0)+n; recomputeStats(); updateUI(); }
+function doPrestige(){
+  const gain=bpFor(state.runCredits); if(gain<1)return;
+  openModal(`<h3>♻ Restructure the factory?</h3>
+    <p class="muted">Resets all resources, Credits, machines, Mk levels, warehouses & terminals. Your Advancement tree and Talents are kept. (Talent Points come from production, not Restructuring.)</p>
+    <ul><li>Gain <b>+${fmt(gain)} 📐 Blueprints</b> (→ ${fmt(state.blueprints+gain)})</li></ul>
+    <div class="rw"><button data-close>Cancel</button><button class="primary" id="cp">Restructure</button></div>`);
+  el("cp").onclick=()=>{ state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; freshRun(state); recomputeStats();
+    for(const k in rate)rate[k]=0; structureDirty=true; resetStructureDOM();
+    closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Restructured! +${fmt(gain)} 📐`,"unlock"); };
+}
+function doFilePatent(){
+  const gain=patentAvailable(); if(gain<1) return;
+  openModal(`<h3>⚛ File a Patent?</h3>
+    <p class="muted">A deeper reset: wipes your factory, Credits, <b>Blueprints, and the whole Advancement tree</b>. Your <b>Talents, Achievements, and Patents are kept</b>.</p>
+    <ul><li>Gain <b>+${fmt(gain)} ⚛ Patents</b> (→ ${fmt((state.patents||0)+gain)})</li>
+    <li>Patent upgrades are permanent — they survive every reset.</li></ul>
+    <div class="rw"><button data-close>Cancel</button><button class="primary" id="cfp">File Patent</button></div>`);
+  el("cfp").onclick=()=>{ state.patents=(state.patents||0)+gain; state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;
+    freshRun(state); for(const k in rate)rate[k]=0; recomputeStats(); resetStructureDOM();
+    closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Patent filed! +${fmt(gain)} ⚛`,"unlock"); };
+}
+function upgradePatent(id){ const p=PATENTS.find(x=>x.id===id); if(!p) return; const l=state.patentUpg[id]||0;
+  const cost=patentCost(p,l); if((state.patents||0)<cost) return; state.patents-=cost; state.patentUpg[id]=l+1; recomputeStats(); updateUI(); SND.build(); toast(`${p.name} → level ${l+1}`,"unlock"); }
+
+/* =========================================================================
+   SAVE / LOAD / OFFLINE
+   ========================================================================= */
+function save(){ state.version=VERSION; state.lastSaved=Date.now();
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){} }
+function migrate(s){
+  const d=defaultState();
+  const out=Object.assign(d,s);
+  out.items=Object.assign({},d.items,s.items||{});
+  out.machines=Object.assign({},d.machines,s.machines||{});
+  out.mk=Object.assign({},d.mk,s.mk||{});
+  out.generators=Object.assign({},d.generators,s.generators||{});
+  out.allocated=Object.assign({start:true}, s.allocated||{});
+  out.milestones=Object.assign({}, s.milestones||{});
+  out.stats=Object.assign({built:0,bpEarned:0,allocs:0,produced:0,made:{}}, s.stats||{});
+  if(!out.stats.made) out.stats.made={};
+  out.ageGoals=Object.assign({}, s.ageGoals||{});
+  out.auto=Object.assign({}, s.auto||{});
+  out.autoOn = (typeof s.autoOn==="boolean") ? s.autoOn : true;
+  out.autoBalance = !!s.autoBalance;
+  out.sound = (typeof s.sound==="boolean") ? s.sound : true;
+  out.hud = !!s.hud;
+  out.talents={};                                  // talent set was redefined (efficiency-only) — reset ranks
+  out.tpClaimed = Math.floor(Math.sqrt((out.stats.produced||0)/TP_SCALE));
+  out.talentPoints = out.tpClaimed;                // Talent Points are now production-earned
+  out.patents = s.patents||0;
+  out.patentUpg = Object.assign({}, s.patentUpg||{});
+  out.bpCycle = s.bpCycle||0;
+  out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
+  out.accumulators = s.accumulators||0; out.charge = s.charge||0;
+  if(s.research){                                   // refund old flat-research Blueprints into the new tree
+    const OLD={automation:[1,1.7],efficiency:[2,1.9],logistics:[1,1.8],market:[1,1.8],massProduction:[2,2.0],
+      precisionTooling:[3,2.1],offlineCap:[2,2.0],offlineEff:[3,2.0],bpYield:[5,2.4],kickstart:[4,2.6]};
+    let refund=0; for(const k in OLD){ const lvl=s.research[k]||0, [b,m]=OLD[k]; for(let i=0;i<lvl;i++) refund+=Math.floor(b*Math.pow(m,i)); }
+    out.blueprints=(s.blueprints||0)+refund; delete out.research;
+  }
+  out.unlocked=Object.assign({},s.unlocked||d.unlocked);
+  START_MACHINES.forEach(k=>out.unlocked[k]=true);
+  START_ITEMS.forEach(k=>out.unlocked["item:"+k]=true);
+  if(!out.marketItem) out.marketItem="ironOre";
+  return out;
+}
+function load(){ let raw; try{raw=localStorage.getItem(SAVE_KEY);}catch(e){raw=null;}
+  if(!raw)return false; try{ state=migrate(JSON.parse(raw)); refreshUnlocks(true); return true; }catch(e){return false;} }
+function applyOffline(){
+  const away=(Date.now()-(state.lastSaved||Date.now()))/1000; if(away<5)return;
+  const eff=offlineEff(), t=Math.min(away,offlineCap());
+  const b={credit:state.credits}; for(const k in ITEMS)b[k]=state.items[k];
+  const steps=Math.min(600,Math.max(1,Math.ceil(t))), dt=t/steps;
+  for(let i=0;i<steps;i++) simulate(dt,eff);
+  grantTP();
+  const earned=state.credits-b.credit;
+  const gains=Object.keys(ITEMS).filter(k=>state.items[k]-b[k]>0.5)
+    .sort((x,y)=>(state.items[y]-b[y])-(state.items[x]-b[x])).slice(0,6)
+    .map(k=>`+${fmt(state.items[k]-b[k])} ${ITEMS[k].ic}`).join(" · ")||"—";
+  openModal(`<h3>👋 Welcome back</h3>
+    <p class="muted">Away for <b style="color:var(--txt)">${dur(away)}</b>${away>offlineCap()?` (capped at ${dur(offlineCap())})`:""} @ ${Math.round(eff*100)}% offline efficiency.</p>
+    <ul><li>Earned <b>${money(earned)}</b></li><li>${gains}</li></ul>
+    <div class="rw"><button class="primary" data-close>Collect</button></div>`);
+}
+
+/* =========================================================================
+   MODAL / TOAST
+   ========================================================================= */
+function openModal(h){ el("modal").innerHTML=h; el("scrim").classList.add("show"); }
+function closeModal(){ el("scrim").classList.remove("show"); }
+el("scrim").addEventListener("click",e=>{ if(e.target.id==="scrim"||e.target.hasAttribute("data-close")) closeModal(); });
+function toast(msg,cls){ const t=document.createElement("div"); t.className="toast"+(cls?" "+cls:""); t.textContent=msg;
+  el("toasts").appendChild(t); setTimeout(()=>{t.style.transition="opacity .4s";t.style.opacity="0";setTimeout(()=>t.remove(),400);},2400); }
+function floatAt(x,y,text,color){ const d=document.createElement("div"); d.className="float"; d.textContent=text;
+  d.style.left=x+"px"; d.style.top=y+"px"; d.style.color=color||"var(--txt)"; document.body.appendChild(d); setTimeout(()=>d.remove(),1000); }
+function screenFlash(){ const f=document.createElement("div"); f.className="flash"; document.body.appendChild(f); setTimeout(()=>f.remove(),1100); }
+// --- Sound: tiny synthesized SFX via Web Audio (no asset files). Toggled by the 🔊 header button. ---
+let audioCtx=null;
+function initAudio(){ try{ if(!audioCtx && window.AudioContext) audioCtx=new AudioContext(); if(audioCtx && audioCtx.state==="suspended") audioCtx.resume(); }catch(e){} }
+function sfx(freq,dur,type,vol){ if(!state.sound || !audioCtx) return;
+  const t=audioCtx.currentTime, o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=type||"sine"; o.frequency.value=freq;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol||0.06,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+(dur||0.12));
+  o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t+(dur||0.12)+0.03); }
+function chord(freqs,dur,type,vol,gap){ freqs.forEach((f,i)=>setTimeout(()=>sfx(f,dur,type,vol),i*(gap||80))); }
+const SND={
+  click:()=>sfx(200,0.05,"triangle",0.04),
+  sell:()=>sfx(540,0.08,"sine",0.05),
+  build:()=>sfx(320,0.07,"square",0.035),
+  unlock:()=>chord([523,784],0.11,"sine",0.06,90),
+  goal:()=>chord([659,988],0.14,"sine",0.07,110),
+  age:()=>chord([523,659,784,1047],0.20,"triangle",0.07,95),
+  prestige:()=>chord([392,523,659,784,1047],0.22,"sine",0.07,85),
+};
+// --- Session HUD: lightweight playtest instrumentation (toggle: 📊 button or ` key) ---
+let sessionStart=Date.now(), sessionClicks=0, sessionAgeTimes={};
+function bottleneck(){                              // the consumed item whose buffer is emptiest (downstream is starving for it)
+  const consumed=new Set();
+  for(const k of MORDER){ if((state.machines[k]||0)>0) for(const r in MACHINES[k].in) consumed.add(r); }
+  let worst=null, wf=Infinity;
+  for(const id of consumed){ const f=(state.items[id]||0)/capOf(id); if(f<wf){ wf=f; worst=id; } }
+  return worst ? {id:worst, fill:wf} : null;
+}
+function chainHealth(){
+  let starved=0, full=0; const ie=inputEff();
+  for(const k of MORDER){ const c=state.machines[k]||0; if(c<=0 || !state.unlocked[k]) continue;
+    const m=MACHINES[k]; let s=false; for(const r in m.in){ if((state.items[r]||0) < m.in[r]*ie*0.5){ s=true; break; } }
+    const out=Object.keys(m.out)[0]; if((state.items[out]||0) >= capOf(out)-1e-6) full++; else if(s) starved++; }
+  return {starved, full};
+}
+function updateHUD(){
+  const h=el("hud"); if(!state.hud){ h.style.display="none"; return; } h.style.display="block";
+  const ca=currentAge(), b=bottleneck(), ch=chainHealth(), pw=lastPower;
+  const ages=[1,2,3,4,5,6].filter(a=>sessionAgeTimes[a]!==undefined).map(a=>`${ROMAN[a]} ${dur(sessionAgeTimes[a])}`).join(" · ");
+  const tot=Object.values(state.machines).reduce((a,c)=>a+c,0);
+  h.innerHTML=`<div class="hudh">📊 Session HUD <span id="hudClose">×</span></div>
+    <div class="hudrow"><span>Time</span><b>${dur((Date.now()-sessionStart)/1000)}</b></div>
+    <div class="hudrow"><span>Age</span><b>${AGES[ca].ic} ${ROMAN[ca]} — ${AGES[ca].n}</b></div>
+    <div class="hudrow"><span>Income</span><b>${money(rate.credit*60)}/min</b></div>
+    <div class="hudrow"><span>Power</span><b class="${pw.ratio<0.999?'neg':'pos'}">${Math.round(pw.ratio*100)}%</b>${pw.cap>0?` <span class="muted">🔋${fmt(pw.charge)}/${fmt(pw.cap)}</span>`:''}</div>
+    <div class="hudrow"><span>Bottleneck</span><b>${b?`${ITEMS[b.id].ic} <span class="${rate[b.id]<-.001?'neg':'muted'}">${Math.round(b.fill*100)}% ${(rate[b.id]>=0?'+':'')+fmt(rate[b.id])}/s</span>`:'—'}</b></div>
+    <div class="hudrow"><span>Chain</span><b>${ch.starved>0?`<span class="neg">${ch.starved}⚠</span>`:'0'} starved · ${ch.full} full</b></div>
+    <div class="hudrow"><span>Machines</span><b>${fmt(tot)} <span class="muted">P${state.prestiges} ⚛${fmt(state.patents||0)}</span></b></div>
+    <div class="hudrow"><span>Manual clicks</span><b>${fmt(sessionClicks)}</b></div>
+    <div class="hudrow"><span>Ages</span><b>${ages||'—'}</b></div>`;
+}
+function onNewAge(a, first){
+  screenFlash(); SND.age();
+  if(first){
+    openModal(`<h3>${AGES[a].ic} Welcome to the ${AGES[a].n}!</h3>
+      <p class="muted">${AGES[a].tagline}</p>
+      <ul><li>New age reached — <b>permanent +10% production</b> (now +${Math.round((a-1)*10)}% from ages).</li></ul>
+      <div class="rw"><button class="primary" data-close>Onward ▸</button></div>`);
+    toast(`${AGES[a].ic} Entered the ${AGES[a].n}!`,"unlock");
+  } else toast(`${AGES[a].ic} Back to the ${AGES[a].n}`,"unlock");
+}
+function currentObjective(){
+  const m=state.machines;
+  if((m.miner||0)<1) return "Click <b>⛏ Mine</b> a few times, sell the Iron Ore (the “$” on its chip), then <b>Build a Miner</b>.";
+  if((m.ironFurnace||0)<1) return "Build a <b>Coal Drill</b> and an <b>Iron Furnace</b> to turn Ore + Coal into Iron Plates.";
+  if((m.gearPress||0)<1) return "Stockpile Iron Plates and build a <b>Gear Press</b> to open the tech tree.";
+  if((m.circuitFab||0)<1) return "Expand the Copper line + a <b>Steel Mill</b>, then build a <b>Circuit Fab</b>.";
+  if((m.assembler||0)<1) return "Build an <b>Assembler</b> to craft Mechanisms — the gateway to Robotics.";
+  if(state.prestiges<1 && state.runCredits<PRESTIGE_SCALE) return `Grow income to <b>${money(PRESTIGE_SCALE)}</b> this run, then <b>♻ Restructure</b> for Blueprints.`;
+  if(state.prestiges<1) return "You can <b>♻ Restructure</b> now for your first Blueprints — spend them in 🌳 Advancements.";
+  if((m.robotAssembler||0)<1) return "Push toward <b>Robots</b>: Oil/Silicon branch → Chip Fab → Robotics Lab → Robot Assembler.";
+  if((m.aiFoundry||0)<1) return "Robots online! Build an <b>AI Foundry</b> to forge <b>AI Cores</b> 🧠.";
+  if((m.probeAssembler||0)<1) return "Endgame: assemble <b>Von Neumann Probes</b> 🛰️ (Probe Assembler) — the top product.";
+  return "Optimize! Spend 📐 Blueprints, ✦ Talents &amp; ⚛ Patents, raise Mk levels, chase 🏅 Achievements.";
+}
+
+const CHANGELOG=[
+  ["0.21.0","New Advancement: 🌳 Industry → Blast Furnace (+50% smelter output — Iron/Copper Furnace, Steel Mill, Alloy Furnace & Foundry). Iron Plate is the game's load-bearing intermediate, so it's often your tightest buffer in the early ages; this is a dedicated lever that rewards investing in smelting throughput to relieve that pinch — instead of only building more furnaces by hand."],
+  ["0.20.0","Session HUD: a toggleable playtest overlay (📊 header button or the ` key) showing income/min, your current bottleneck (the emptiest consumed buffer), chain health (starved vs full machines), power & charge, per-age pacing, and manual-click count — so you (and future tuning) can see exactly where a run drags."],
+  ["0.19.0","Visual polish: added depth and finish throughout — layered panel/card shadows, an accent underline on the active tab, a soft glow on affordable & Restructure buttons, card hover lift, section-header rules, and a themed scrollbar. Purely cosmetic."],
+  ["0.18.0","Balance: Solar Panels no longer need Silicon (which unlocked a whole Age later) — they're now buildable in the Industrial Age exactly when power first gets tight, giving a clean, fuel-free alternative to coal-hungry Steam Engines. (Recipe: 20 Steel + 15 Circuit.) Found via the loop-pacing sim, which exposed an Age III power wall."],
+  ["0.17.0","Polish & sound: subtle synthesized sound effects (no downloads) for mining, selling, building, unlocks, age-ups, goals and prestige — toggle with the 🔊 button in the header. Plus reduced-motion support (respects your OS setting) and a proper tab icon."],
+  ["0.16.0","Age Goals: each of the six Ages now has one headline goal — produce enough of its key product (5,000 Iron Plates, 3,000 Circuits, 200 Robots, …). Master it for a big permanent, age-themed reward. Live progress shows in the age banner, with the full list in Stats. Distinct from Achievements: one clear objective per age rather than a scattered collection."],
+  ["0.15.0","Wider chains — copper branch: a 🌀 Motor Winder turns Copper Wire + Steel into 🧲 Electric Motors, and a 🔧 Gearworks builds Mechanisms from Motors + Gears — an alternative Mechanism route that uses NO circuits, freeing circuit output for Processors. Gives Copper Wire a second use and de-linearizes the copper line."],
+  ["0.14.0","Wider chains, cont.: a ⚒️ Foundry now smelts Alloy into Steel — turning the Alloy branch from a dead-end into a real chain link (a copper-fed route to Steel that routes around an iron-plate bottleneck). Plus a 🏗️ Cement Kiln (Stone → Concrete) gives the Stone-Age start a second parallel product."],
+  ["0.13.0","Wider chains (Phase 2): the first of several parallel branches — an 🪙 Alloy Furnace (Machine Age) fuses Iron + Copper Plates into high-value Alloy, a real early choice between quick cash and advancing the tech chain. More branches to come."],
+  ["0.12.0","Age deepening (Phase 2): the Automation Age gets a signature — ⚖ Auto-Balance. Toggle it and the Auto-Builder stops buying blindly and instead keeps hammering the most-starved machine (emptiest output buffer), maintaining your chain's ratios for you. Its batch-buys pair with Age III's accumulators."],
+  ["0.11.0","Age deepening (Phase 2): the Industrial Age gets a signature — 🔋 Accumulators. They bank surplus power (from the base grid + fuel-free generators) and discharge to cover demand spikes, keeping you at 100% while generation catches up. Especially strong with the Auto-Builder's build spikes. Found in the ⚡ Power tab once you build a Circuit Fab."],
+  ["0.10.0","Age deepening (Phase 2): the Robotic Age gets a signature — a 🤖 Workforce. Deploy Robots as workers for a diminishing-returns production boost (√deployed × 5%), a real choice against selling them for cash or feeding them to Probes. It's an in-run layer (resets on Restructure), so it rewards deep pushes."],
+  ["0.9.0","Ages: your progress is now framed as a journey through six named Ages (Stone & Iron → Machine → Industrial → Automation → Robotic → Space). Entering a new Age for the first time is celebrated and grants a permanent +10% production. After a Restructure you re-climb the ages — faster every run. Machines are grouped by Age, with a new age banner up top."],
+  ["0.8.0","Punchy meta + more content: prestige now compounds hard — steeper Blueprint income, ~2× stronger Advancement-tree effects, and an earlier Patent unlock, so each Restructure clearly speeds up the next. To back it up, the crafting chain now extends past Robots into 🧠 AI Cores and 🛰️ Von Neumann Probes (two new machines + a new tier), with new achievements and objectives, plus two extra Patent upgrades for the infinite endgame."],
+  ["0.7.0","Endgame, polish & balance: a deep second-prestige layer — ⚛ Patents (File Patent to reset the factory, Blueprints & the tree for permanent global upgrades that survive everything). Plus a live objective bar, floating text on sells/mining, a prestige flash, a rebalanced power grid (200 MW base) and a more rewarding, accessible first prestige. Under the hood: a Node test harness (test/test.js) and a balance simulator (test/balance.js)."],
+  ["0.6.1","Clearer split between the two meta layers: Advancements (📐, from Restructuring) now handle power & capability — production, capacity, economy, unlocks, keystones — while Talents (✦) are the efficiency layer that only cuts costs (raw materials, inputs, fuel, build & Mk cost). Talent Points are now earned from total materials produced as you play, not from Restructuring, so they reward a different activity. (Talent ranks reset once with this change.)"],
+  ["0.6.0","Talent Tree: a second meta layer with its own currency, ✦ Talent Points, earned each Restructure. Rank up 9 talents across 3 unlocking tiers — the flagship Efficient Extraction and Master Extractor cut raw material costs (how much ore/coal your furnaces consume), alongside production, storage, sales, and fuel talents."],
+  ["0.5.0","Automation & achievements: unlock the Auto-Builder node in the tree, then flag any machine or generator to build itself (with a master ON/OFF). Added 16 achievements on lifetime milestones — each grants a small permanent bonus that feeds back through the same stat system as the tree. See the new Achievements panel in Stats."],
+  ["0.4.1","Tree respec & weaving: added cross-arm links (two concentric rings) so you can branch sideways between arms. New Refund mode reclaims a node's Blueprints if removing it won't strand others, plus an ↺ Respec button to refund the whole tree at once."],
+  ["0.4.0","Advancement Tree: the flat research list is now a large interconnected passive tree (6 themed arms, ~55 nodes: minors, notables, and keystones). Spend Blueprints to allocate outward from the Core, PoE-style. Drag to pan, scroll to zoom. Old research points were refunded as Blueprints."],
+  ["0.3.0","Power & batch update: a new ⚡ Power grid — machines draw power (by tier, scaled by Mk); build Steam Engines (burn Coal), Solar Panels, and Fusion Reactors, and under-supply throttles the whole factory. Plus ×1 / ×10 / Max batch building on machines, generators, warehouses, and terminals."],
+  ["0.2.0","Deep crafting overhaul: 19 resources across 6 tiers, 20 machines built from bills-of-materials, a guided unlock tech-tree, per-machine Mk tiers, storage caps with Warehouses + backpressure, a configurable Trade Terminal, and a 10-node research tree."],
+  ["0.1.0","Initial prototype: linear Ore→Plate→Gear→Circuit→Credits chain with prestige and offline progress."],
+];
+
+/* =========================================================================
+   WIRING + BOOT
+   ========================================================================= */
+function wire(){
+  el("btnMine").addEventListener("click",e=>{ const a=orePerClick(); mine(); floatAt(e.clientX,e.clientY,"+"+fmt(a)+" ⛏️","var(--ore)"); });
+  el("ticker").addEventListener("click",e=>{ const s=e.target.closest("[data-sell]"); if(s){ const g=sellAll(s.dataset.sell); if(g>0) floatAt(e.clientX,e.clientY,"+"+money(g),"var(--good)"); } });
+  el("machines").addEventListener("click",e=>{ const a=e.target.closest("[data-auto]"),b=e.target.closest("[data-buy]"),m=e.target.closest("[data-mk]");
+    if(a){ state.auto[a.dataset.auto]=!state.auto[a.dataset.auto]; updateUI(); }
+    else if(b) buildMachine(b.dataset.buy); else if(m) mkMachine(m.dataset.mk); });
+  // advancement tree: drag to pan, wheel/buttons to zoom, click to allocate, hover for tooltip
+  const twrap=el("treeWrap"), tsvg=el("treeSvg"), ttip=el("treeTip");
+  twrap.addEventListener("mousedown",e=>{ treeDrag={x:e.clientX,y:e.clientY,cx:cam.x,cy:cam.y}; treeDragged=false; twrap.classList.add("drag"); });
+  window.addEventListener("mousemove",e=>{ if(!treeDrag)return; const dx=e.clientX-treeDrag.x, dy=e.clientY-treeDrag.y;
+    if(Math.abs(dx)+Math.abs(dy)>4) treeDragged=true; cam.x=treeDrag.cx+dx; cam.y=treeDrag.cy+dy; applyCam(); });
+  window.addEventListener("mouseup",()=>{ if(treeDrag){ treeDrag=null; twrap.classList.remove("drag"); } });
+  tsvg.addEventListener("click",e=>{ if(treeDragged)return; const g=e.target.closest("[data-node]"); if(!g)return;
+    if(treeMode==="refund") refundNode(g.dataset.node); else allocateNode(g.dataset.node); });
+  twrap.addEventListener("wheel",e=>{ e.preventDefault(); const r=twrap.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top, old=cam.z;
+    cam.z=Math.max(0.3,Math.min(1.7, cam.z*(e.deltaY<0?1.12:0.89)));
+    cam.x=mx-(mx-cam.x)*(cam.z/old); cam.y=my-(my-cam.y)*(cam.z/old); applyCam(); }, {passive:false});
+  tsvg.addEventListener("mousemove",e=>{ const g=e.target.closest("[data-node]");
+    if(!g){ ttip.style.display="none"; return; } const id=g.dataset.node, n=NODES[id], alloc=state.allocated[id];
+    let stt;
+    if(treeMode==="refund" && alloc && id!=="start") stt = removable(id)?`<span class="warn">click to refund +${n.cost} 📐</span>`:'<span class="neg">can’t refund — path needed</span>';
+    else if(alloc) stt='<span class="pos">✓ allocated</span>';
+    else if(nodeAvailable(id)) stt=(state.blueprints>=n.cost?'<span class="warn">available</span>':'<span class="neg">not enough 📐</span>');
+    else stt='<span class="muted">locked</span>';
+    ttip.innerHTML=`<b>${n.name}</b> <span class="muted">${n.type}</span><br>${n.desc}${n.type==="start"?"":`<br>Cost: 📐 ${n.cost} · ${stt}`}`;
+    const r=twrap.getBoundingClientRect(); ttip.style.display="block";
+    ttip.style.left=Math.min(r.width-235,(e.clientX-r.left)+14)+"px"; ttip.style.top=((e.clientY-r.top)+14)+"px"; });
+  tsvg.addEventListener("mouseleave",()=>{ ttip.style.display="none"; });
+  el("treeZoomIn").addEventListener("click",()=>{ cam.z=Math.min(1.7,cam.z*1.15); applyCam(); });
+  el("treeZoomOut").addEventListener("click",()=>{ cam.z=Math.max(0.3,cam.z*0.87); applyCam(); });
+  el("treeReset").addEventListener("click",()=>{ cam.z=0.55; centerTree(); });
+  const tmodes=el("treemode").querySelectorAll("button");
+  tmodes.forEach(b=>b.addEventListener("click",()=>{ treeMode=b.dataset.tmode; tmodes.forEach(x=>x.classList.toggle("on",x===b)); renderTree(); }));
+  tmodes.forEach(b=>b.classList.toggle("on", b.dataset.tmode==="alloc"));
+  el("treeRespec").addEventListener("click",respecAll);
+  el("btnWarehouse").addEventListener("click",buildWarehouse);
+  el("btnMarket").addEventListener("click",buildMarket);
+  el("btnMarketMk").addEventListener("click",mkMarket);
+  el("marketSel").addEventListener("change",e=>{ state.marketItem=e.target.value; });
+  el("btnPrestige").addEventListener("click",doPrestige);
+  el("generators").addEventListener("click",e=>{ const a=e.target.closest("[data-gauto]"),b=e.target.closest("[data-gen]");
+    if(a){ const key="gen:"+a.dataset.gauto; state.auto[key]=!state.auto[key]; updateUI(); }
+    else if(b) buildGenerator(b.dataset.gen); });
+  el("autoToggle").addEventListener("click",()=>{ state.autoOn=!state.autoOn; updateUI(); });
+  el("autoBalanceToggle").addEventListener("click",()=>{ state.autoBalance=!state.autoBalance; updateUI(); });
+  el("wfDeploy1").addEventListener("click",()=>deployRobots(1));
+  el("wfDeploy10").addEventListener("click",()=>deployRobots(10));
+  el("wfDeployMax").addEventListener("click",()=>deployRobots(Math.floor(state.items.robot||0)));
+  el("wfRecall").addEventListener("click",()=>recallRobots(state.deployed||0));
+  el("buildAcc").addEventListener("click",buildAccumulator);
+  el("talents").addEventListener("click",e=>{ const b=e.target.closest("[data-talent]"); if(b) upgradeTalent(b.dataset.talent); });
+  el("patentBody").addEventListener("click",e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });
+  const modes=el("buymode").querySelectorAll("button");
+  modes.forEach(b=>b.addEventListener("click",()=>{ buyMode=b.dataset.mode; modes.forEach(x=>x.classList.toggle("on",x===b)); updateUI(); }));
+  modes.forEach(b=>b.classList.toggle("on", b.dataset.mode==="1"));
+
+  el("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-tab]"); if(!b)return;
+    [...el("tabs").children].forEach(x=>x.classList.toggle("on",x===b));
+    ["factory","power","storage","tree","talents","patents","stats"].forEach(t=>el("tab-"+t).classList.toggle("on",t===b.dataset.tab));
+    if(b.dataset.tab==="tree"){ centerTree(); renderTree(); }
+    updateUI(); });
+
+  el("btnSave").addEventListener("click",()=>{save();toast("Saved.");});
+  el("btnChangelog").addEventListener("click",()=>openModal(
+    `<h3>📜 Changelog</h3><ul>${CHANGELOG.map(c=>`<li><b>v${c[0]}</b> — ${c[1]}</li>`).join("")}</ul>
+     <div class="rw"><button class="primary" data-close>Close</button></div>`));
+  el("btnExport").addEventListener("click",()=>{ save();
+    const code=btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+    openModal(`<h3>⬆ Export save</h3><p class="muted">Copy to back up or move devices.</p>
+      <textarea readonly id="expText">${code}</textarea><div class="rw"><button class="primary" data-close>Done</button></div>`);
+    setTimeout(()=>{const t=el("expText");if(t){t.focus();t.select();}},50); });
+  el("btnImport").addEventListener("click",()=>{
+    openModal(`<h3>⬇ Import save</h3><p class="muted">Paste an exported string. Overwrites current game.</p>
+      <textarea id="impText" placeholder="paste save code…"></textarea>
+      <div class="rw"><button data-close>Cancel</button><button class="primary" id="doImp">Import</button></div>`);
+    el("doImp").onclick=()=>{ try{ const s=JSON.parse(decodeURIComponent(escape(atob(el("impText").value.trim()))));
+      state=migrate(s); refreshUnlocks(true); recomputeStats(); resetStructureDOM();
+      save(); closeModal(); updateUI(); renderTree(); toast("Save imported."); }catch(err){ toast("⚠ Invalid save code."); } };
+  });
+  el("btnReset").addEventListener("click",()=>{
+    openModal(`<h3>🗑 Hard reset?</h3><p class="muted">Erases <b>everything</b>, including Blueprints & Research. Cannot be undone.</p>
+      <div class="rw"><button data-close>Cancel</button><button class="primary" id="doRst" style="background:var(--bad);border-color:var(--bad);color:#fff">Erase all</button></div>`);
+    el("doRst").onclick=()=>{ state=defaultState(); recomputeStats(); resetStructureDOM();
+      save(); closeModal(); updateUI(); renderTree(); toast("Fresh factory."); };
+  });
+  el("soundToggle").addEventListener("click",()=>{ initAudio(); state.sound=!state.sound; if(state.sound) SND.click(); updateUI(); });
+  el("hudToggle").addEventListener("click",()=>{ state.hud=!state.hud; updateUI(); });
+  el("hud").addEventListener("click",e=>{ if(e.target.id==="hudClose"){ state.hud=false; updateUI(); } });
+  document.addEventListener("pointerdown", initAudio, {once:true});
+  window.addEventListener("beforeunload",save);
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); else if(e.code==="Backquote"){ state.hud=!state.hud; updateUI(); } });
+}
+function boot(){
+  const had=load();
+  recomputeStats();
+  checkMilestones();
+  wire();
+  buildTree();
+  if(had) applyOffline();
+  lastReal=Date.now();
+  updateUI();
+  setInterval(tick,100);
+  setInterval(autoBuild,300);
+  setInterval(save,5000);
+}
+boot();
+</script>
+</body>
+</html>
