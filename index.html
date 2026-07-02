@@ -385,7 +385,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.23.0";
+const VERSION = "0.24.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -397,6 +397,9 @@ const TIERS = ["Extraction","Smelting & Refining","Basic Components","Advanced C
 // Ages are the macro-journey: each groups a slice of the chain. Reaching a NEW age (ever) grants
 // a permanent bonus; after a Restructure you re-climb the ages fast — faster each run.
 const TIER_AGE = [1,1,2,3,4,5,6];                   // which age each tier belongs to
+// Per-copy build-cost scaling by tier. Low tiers stay spammy-cheap; high tiers scale HARD so a single
+// run walls out and can't brute-force the endgame — prestige multipliers/discounts are the way through.
+const TIER_MULT = [1.15, 1.16, 1.19, 1.23, 1.30, 1.42, 1.55];
 const ROMAN = ["","I","II","III","IV","V","VI"];
 const AGES = [ null,
   {n:"Stone & Iron Age", ic:"⛏️", tagline:"Mine ore and smelt your first plates."},
@@ -437,12 +440,12 @@ const ITEMS = {
   circuit:    {n:"Circuit",      ic:"🔌", t:3, cap:200, sell:30},
   silicon:    {n:"Silicon",      ic:"🔷", t:3, cap:200, sell:25},
   motor:      {n:"Electric Motor",ic:"🧲", t:3, cap:150, sell:40},
-  mechanism:  {n:"Mechanism",    ic:"🛠️", t:4, cap:120, sell:90},
-  processor:  {n:"Processor",    ic:"💾", t:4, cap:120, sell:200},
-  robotArm:   {n:"Robot Arm",    ic:"🦾", t:5, cap:80,  sell:500},
-  robot:      {n:"Robot",        ic:"🤖", t:5, cap:60,  sell:2500},
-  aiCore:     {n:"AI Core",      ic:"🧠", t:6, cap:40,  sell:15000},
-  probe:      {n:"Von Neumann Probe", ic:"🛰️", t:6, cap:25, sell:150000},
+  mechanism:  {n:"Mechanism",    ic:"🛠️", t:4, cap:120, sell:55},
+  processor:  {n:"Processor",    ic:"💾", t:4, cap:120, sell:90},
+  robotArm:   {n:"Robot Arm",    ic:"🦾", t:5, cap:80,  sell:150},
+  robot:      {n:"Robot",        ic:"🤖", t:5, cap:60,  sell:400},
+  aiCore:     {n:"AI Core",      ic:"🧠", t:6, cap:40,  sell:900},
+  probe:      {n:"Von Neumann Probe", ic:"🛰️", t:6, cap:25, sell:2500},
 };
 
 // Machines. build.cr = base credit cost (scales ×1.15/owned). build.bom = flat component cost per build.
@@ -472,14 +475,14 @@ const MACHINES = {
   circuitFab:   {n:"Circuit Fab",     ic:"🔌", t:3, rate:1, build:{cr:3000,bom:{copperWire:20,gear:10}},  in:{copperWire:3,ironPlate:1},      out:{circuit:1},   mkItem:"steel",    unlock:{wireMill:1,steelMill:1}},
   motorWinder:  {n:"Motor Winder",    ic:"🌀", t:3, rate:1, build:{cr:4000,bom:{copperWire:20,steel:10}}, in:{copperWire:3,steel:1},          out:{motor:1},     mkItem:"steel",    unlock:{circuitFab:1}},
 
-  assembler:    {n:"Assembler",       ic:"🛠️", t:4, rate:1, build:{cr:10000,mult:1.18,bom:{circuit:20,gear:20,steel:10}}, in:{gear:2,circuit:1},         out:{mechanism:1}, mkItem:"steel",    unlock:{circuitFab:1}},
-  gearworks:    {n:"Gearworks",       ic:"🔧", t:4, rate:1, build:{cr:14000,mult:1.18,bom:{motor:15,gear:20,steel:10}}, in:{motor:1,gear:1},          out:{mechanism:1}, mkItem:"steel",    unlock:{assembler:1,motorWinder:1}},
-  chipFab:      {n:"Chip Fab",        ic:"💾", t:4, rate:1, build:{cr:22000,mult:1.20,bom:{circuit:30,silicon:15,plastic:15}}, in:{circuit:3,silicon:1,plastic:1}, out:{processor:1}, mkItem:"mechanism", unlock:{assembler:1}},
+  assembler:    {n:"Assembler",       ic:"🛠️", t:4, rate:1, build:{cr:10000,bom:{circuit:20,gear:20,steel:10}}, in:{gear:2,circuit:1},         out:{mechanism:1}, mkItem:"steel",    unlock:{circuitFab:1}},
+  gearworks:    {n:"Gearworks",       ic:"🔧", t:4, rate:1, build:{cr:14000,bom:{motor:15,gear:20,steel:10}}, in:{motor:1,gear:1},          out:{mechanism:1}, mkItem:"steel",    unlock:{assembler:1,motorWinder:1}},
+  chipFab:      {n:"Chip Fab",        ic:"💾", t:4, rate:1, build:{cr:22000,bom:{circuit:30,silicon:15,plastic:15}}, in:{circuit:3,silicon:1,plastic:1}, out:{processor:1}, mkItem:"mechanism", unlock:{assembler:1}},
 
-  roboticsLab:  {n:"Robotics Lab",    ic:"🦾", t:5, rate:1, build:{cr:70000,mult:1.24,bom:{mechanism:20,processor:10,steel:30}}, in:{mechanism:2,processor:1,steel:1}, out:{robotArm:1}, mkItem:"processor", unlock:{chipFab:1}},
-  robotAssembler:{n:"Robot Assembler",ic:"🤖", t:5, rate:1, build:{cr:200000,mult:1.28,bom:{robotArm:10,processor:10,mechanism:20}}, in:{robotArm:1,processor:1,mechanism:1}, out:{robot:1}, mkItem:"processor", unlock:{roboticsLab:1}},
-  aiFoundry:  {n:"AI Foundry",     ic:"🧠", t:6, rate:1, build:{cr:700000,mult:1.30,bom:{processor:30,robotArm:15,circuit:50}},  in:{processor:2,robotArm:1},   out:{aiCore:1}, mkItem:"aiCore",   unlock:{robotAssembler:1}},
-  probeAssembler:{n:"Probe Assembler",ic:"🛰️", t:6, rate:1, build:{cr:3000000,mult:1.30,bom:{aiCore:15,robot:15,steel:80}},    in:{aiCore:1,robot:1,steel:2},  out:{probe:1}, mkItem:"aiCore",   unlock:{aiFoundry:1}},
+  roboticsLab:  {n:"Robotics Lab",    ic:"🦾", t:5, rate:1, build:{cr:70000,bom:{mechanism:20,processor:10,steel:30}}, in:{mechanism:2,processor:1,steel:1}, out:{robotArm:1}, mkItem:"processor", unlock:{chipFab:1}},
+  robotAssembler:{n:"Robot Assembler",ic:"🤖", t:5, rate:1, build:{cr:200000,bom:{robotArm:10,processor:10,mechanism:20}}, in:{robotArm:1,processor:1,mechanism:1}, out:{robot:1}, mkItem:"processor", unlock:{roboticsLab:1}},
+  aiFoundry:  {n:"AI Foundry",     ic:"🧠", t:6, rate:1, build:{cr:700000,bom:{processor:30,robotArm:15,circuit:50}},  in:{processor:2,robotArm:1},   out:{aiCore:1}, mkItem:"aiCore",   unlock:{robotAssembler:1}},
+  probeAssembler:{n:"Probe Assembler",ic:"🛰️", t:6, rate:1, build:{cr:3000000,bom:{aiCore:15,robot:15,steel:80}},    in:{aiCore:1,robot:1,steel:2},  out:{probe:1}, mkItem:"aiCore",   unlock:{aiFoundry:1}},
 };
 const MORDER = Object.keys(MACHINES);          // already in raw->finished order
 const START_MACHINES = ["miner","coalDrill","ironFurnace"];
@@ -692,9 +695,11 @@ function defaultState(){
   return s;
 }
 let state = defaultState();
-const rate = {};                                  // smoothed net/s per item
+const rate = {};                                  // smoothed net/s per item (buffer trend)
 for(const k in ITEMS) rate[k]=0;
 rate.credit = 0;
+const prodRate = {};                              // smoothed GROSS output/s per item (production, ignores consumption/cap)
+for(const k in ITEMS) prodRate[k]=0;
 
 /* =========================================================================
    DERIVED MULTIPLIERS
@@ -757,7 +762,7 @@ function planBuild(baseCr, mult, owned, bom, cap){
 }
 function scaleBOM(bom, n){ const o={}; for(const r in (bom||{})) o[r]=bom[r]*n; return o; }
 function buildBOM(key){ return MACHINES[key].build.bom || {}; }
-const planMachine   = (key,cap) => planBuild(MACHINES[key].build.cr, MACHINES[key].build.mult||1.15, state.machines[key]||0, buildBOM(key), cap);
+const planMachine   = (key,cap) => planBuild(MACHINES[key].build.cr, MACHINES[key].build.mult||TIER_MULT[MACHINES[key].t], state.machines[key]||0, buildBOM(key), cap);
 const planGenerator = (key,cap) => planBuild(GENERATORS[key].build.cr, GENERATORS[key].build.mult, state.generators[key]||0, GENERATORS[key].build.bom, cap);
 const planWarehouse = cap => planBuild(WAREHOUSE.base, WAREHOUSE.mult, state.warehouses, WAREHOUSE.bom, cap);
 const planMarket    = cap => planBuild(MARKET.base, MARKET.mult, state.markets, MARKET.bom, cap);
@@ -929,6 +934,7 @@ function tick(){
   const now=Date.now(); let dt=(now-lastReal)/1000; lastReal=now;
   if(dt<0)dt=0; if(dt>5)dt=5;
   const before={credit:state.credits}; for(const k in ITEMS) before[k]=state.items[k];
+  const madeBefore={}; for(const k in ITEMS) madeBefore[k]=state.stats.made[k]||0;
   simulate(dt,1);
   refreshUnlocks(false);
   checkMilestones();
@@ -939,7 +945,10 @@ function tick(){
   else if(_age<(state.age||1)) state.age=_age;   // dropped back after a Restructure — silent
   if(sessionAgeTimes[_age]===undefined) sessionAgeTimes[_age]=(Date.now()-sessionStart)/1000;   // HUD pacing
   if(dt>0){ const k=Math.min(1,dt*3);
-    for(const r in ITEMS) rate[r]+=((state.items[r]-before[r])/dt - rate[r])*k;
+    for(const r in ITEMS){
+      rate[r]+=((state.items[r]-before[r])/dt - rate[r])*k;
+      prodRate[r]+=(((state.stats.made[r]||0)-(madeBefore[r]||0))/dt - prodRate[r])*k;   // gross output/s
+    }
     rate.credit+=((state.credits-before.credit)/dt - rate.credit)*k;
   }
   updateUI();
@@ -1187,12 +1196,22 @@ function updateUI(){
   // ticker
   for(const id in ITEMS){
     if(!itemUnlocked(id)) continue;
-    const cap=capOf(id), amt=state.items[id]||0;
-    el("amt-"+id).textContent=fmt(amt);
-    el("rate-"+id).innerHTML=rateStr(rate[id]);
+    const cap=capOf(id), amt=state.items[id]||0, fill=cap>0?amt/cap:0;
+    const gp=prodRate[id]||0, net=rate[id]||0;
+    // "Full" = literally at cap, OR pinned near cap by production with a near-zero net (the case that jitters).
+    // Using net (not a raw fill %) makes this robust to tick rate and to the consume/refill wobble.
+    const full = amt>=cap-1e-6 || (fill>=0.9 && Math.abs(net) < Math.max(0.5, gp*0.3));
+    el("amt-"+id).textContent=fmt(full?cap:amt);    // snap to cap when full → no last-digit jitter
+    // Lead with GROSS production (stable, answers "how much am I making"); fall back to net drain for consumed items.
+    el("rate-"+id).innerHTML =
+      gp>0.01   ? `<span class="pos">▲${fmt(gp)}/s</span>`+(full?` <span class="muted">· full</span>`:``)
+      : net<-0.01 ? rateStr(net)
+      : `<span class="muted">${full?'full':'+0/s'}</span>`;
     el("cap-"+id).textContent="/ "+fmt(cap);
-    const bar=el("bar-"+id); bar.style.width=Math.min(100,amt/cap*100)+"%";
-    el("amt-"+id).parentElement.parentElement.classList.toggle("full", amt>=cap-1e-6);
+    const bar=el("bar-"+id); bar.style.width=Math.min(100,(full?1:fill)*100)+"%";
+    const chip=el("amt-"+id).parentElement;         // amt is a direct child of the chip
+    chip.classList.toggle("full", full);
+    chip.title=`making ${fmt(gp)}/s · net ${(net>=0?'+':'')+fmt(net)}/s`;   // full detail on hover
   }
   // machines
   for(const k of MORDER){
@@ -1392,7 +1411,7 @@ function doPrestige(){
     <ul><li>Gain <b>+${fmt(gain)} 📐 Blueprints</b> (→ ${fmt(state.blueprints+gain)})</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cp">Restructure</button></div>`);
   el("cp").onclick=()=>{ state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; freshRun(state); recomputeStats();
-    for(const k in rate)rate[k]=0; structureDirty=true; resetStructureDOM();
+    for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; structureDirty=true; resetStructureDOM();
     closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Restructured! +${fmt(gain)} 📐`,"unlock"); };
 }
 function doFilePatent(){
@@ -1403,7 +1422,7 @@ function doFilePatent(){
     <li>Patent upgrades are permanent — they survive every reset.</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cfp">File Patent</button></div>`);
   el("cfp").onclick=()=>{ state.patents=(state.patents||0)+gain; state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;
-    freshRun(state); for(const k in rate)rate[k]=0; recomputeStats(); resetStructureDOM();
+    freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; recomputeStats(); resetStructureDOM();
     closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Patent filed! +${fmt(gain)} ⚛`,"unlock"); };
 }
 function upgradePatent(id){ const p=PATENTS.find(x=>x.id===id); if(!p) return; const l=state.patentUpg[id]||0;
@@ -1559,6 +1578,8 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.24.0","Major rebalance (pass 1 of a longer game): prestige is now required to reach the endgame. High-tier machines cost exponentially more per copy (scaling steepens by tier, up to ×1.55 each at the Singularity tier), so a single run now hits a wall you can only push past by Restructuring and spending Blueprints. To stop the late game from being a runaway money-printer, top-tier items now sell for far less (they're the goal, not a cash crop — e.g. Probes 150K→2.5K, AI Cores 15K→900); your credit income now comes from selling the abundant mid-tier materials you overproduce. Early and mid game are largely unchanged. (More depth per age is coming next.)"],
+  ["0.23.1","Clearer resource readouts. Each resource chip now shows how much you're actually producing (▲ gross output/s) instead of only the net change — so a full or fully-consumed item no longer just reads ~0. Full buffers now display a stable amount with a 'full' tag instead of jittering, and hovering a chip shows both production and net rate. (Also fixed a long-standing bug where the 'full' highlight was applied to the wrong element.)"],
   ["0.23.0","Longer late game + Workforce rebalance. Deployed Robots now draw grid power (~0.5 MW each), so a big workforce needs real generators — fielding thousands of robots for free is out; it's now a genuine power investment that self-limits (linear power cost vs √ production benefit). The Robotics/Singularity chain (Assembler → Chip Fab → Robotics Lab → Robot Assembler → AI Foundry → Probe Assembler) also costs more up front and scales steeper per copy, so reaching and mass-producing robots is a longer, more deliberate haul."],
   ["0.22.1","Bugfix: talents no longer reset when you reload the page. An old one-time migration was wiping your purchased talent ranks (and recomputing Talent Points) on every load — now your talents and TP are preserved across refreshes like everything else."],
   ["0.22.0","Trade Terminal can now Sell Overstock: pick ⚙️ Sell overstock (auto) in the terminal's dropdown and it auto-sells whatever's piling up — the surplus above 90% of each item's cap, clearing the fullest buffers first. Great for turning wasted overflow into Credits and relieving backpressure without babysitting a single resource. It never sells below 90%, so it won't starve your production lines."],

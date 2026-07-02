@@ -471,22 +471,49 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
     Math.abs(p1600 / p400 - 4) < 1e-6 && Math.abs(b1600 / b400 - 2) < 1e-6);
 })();
 
-// ---------------------------------------------------------------- robot-chain steeper scaling
+// ---------------------------------------------------------------- exponential cost scaling by tier
 (() => {
-  ok("robot-chain machines carry a steeper build.mult",
-    E.MACHINES.robotAssembler.build.mult === 1.28 && E.MACHINES.aiFoundry.build.mult === 1.30 && E.MACHINES.roboticsLab.build.mult === 1.24);
-  ok("early machines keep default (undefined => 1.15) scaling", E.MACHINES.ironFurnace.build.mult === undefined);
+  // Cost scaling now comes from TIER_MULT (per-tier), steepening toward the endgame to create the wall.
+  ok("TIER_MULT steepens with tier", E.TIER_MULT[0] === 1.15 && E.TIER_MULT[6] === 1.55 && E.TIER_MULT[6] > E.TIER_MULT[4] && E.TIER_MULT[4] > E.TIER_MULT[2]);
 
-  // planMachine reflects the per-machine mult in the next-copy unit price
-  fresh(); E.state.unlocked.robotAssembler = true;
-  E.state.machines.robotAssembler = 0; const u0 = E.planMachine("robotAssembler", 1).unit;
-  E.state.machines.robotAssembler = 1; const u1 = E.planMachine("robotAssembler", 1).unit;
-  ok("robot chain scales at its steeper mult (~1.28)", Math.abs(u1 / u0 - 1.28) < 0.01);
+  // planMachine scales the next-copy unit price at the item's TIER_MULT
+  const check = (key, mult) => {
+    fresh(); E.state.unlocked[key] = true;
+    E.state.machines[key] = 0; const u0 = E.planMachine(key, 1).unit;
+    E.state.machines[key] = 1; const u1 = E.planMachine(key, 1).unit;
+    ok(`${key} scales at TIER_MULT[t${E.MACHINES[key].t}] (~${mult})`, Math.abs(u1 / u0 - mult) < 0.01);
+  };
+  check("gearPress", E.TIER_MULT[2]);        // 1.19
+  check("robotAssembler", E.TIER_MULT[5]);   // 1.42
+  check("probeAssembler", E.TIER_MULT[6]);   // 1.55
 
+  // the endgame walls a single run: 15 Probe Assemblers cost far more than an un-prestiged run's income
+  fresh(); E.state.unlocked.probeAssembler = true;
+  E.state.credits = 1e11;                                          // huge purse...
+  E.state.items.aiCore = 1e4; E.state.items.robot = 1e4; E.state.items.steel = 1e5;  // ...and ample BOM
+  const p = E.planMachine("probeAssembler", 15);
+  ok("15 probe assemblers cost > 1 billion (steep late wall)", p.cost > 1e9);
+})();
+
+// ---------------------------------------------------------------- gross production tracking (▲ readout data source)
+(() => {
+  // The ticker's "▲X/s" production number is smoothed from per-tick deltas of stats.made, so the engine
+  // must record gross machine output there — even when the buffer is full and drained downstream.
   fresh();
-  E.state.machines.gearPress = 0; const g0 = E.planMachine("gearPress", 1).unit;
-  E.state.machines.gearPress = 1; const g1 = E.planMachine("gearPress", 1).unit;
-  ok("early chain still scales at 1.15", Math.abs(g1 / g0 - 1.15) < 0.01);
+  E.state.machines.ironFurnace = 3; E.state.items.ironOre = 1000; E.state.items.coal = 1000;
+  const b = E.state.stats.made.ironPlate || 0;
+  E.simulate(1, 1);
+  ok("stats.made records gross output (feeds the ▲ readout)", ((E.state.stats.made.ironPlate || 0) - b) > 2.9);
+
+  // near-full buffer, drained by a downstream consumer: production is still recorded (the "producing while full" case)
+  fresh();
+  E.state.unlocked.gearPress = true;
+  E.state.machines.ironFurnace = 5; E.state.machines.gearPress = 3;
+  E.state.items.ironOre = 1000; E.state.items.coal = 1000;
+  E.state.items.ironPlate = E.capOf("ironPlate") - 5;   // a sliver of headroom so the furnace outputs
+  const b2 = E.state.stats.made.ironPlate || 0;
+  E.simulate(1, 1);
+  ok("production recorded even with a near-full, downstream-drained buffer", ((E.state.stats.made.ironPlate || 0) - b2) > 0);
 })();
 
 // ---------------------------------------------------------------- summary

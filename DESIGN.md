@@ -68,10 +68,11 @@ and expanding their storage is a real decision.
 ## 4. Machines (26)
 
 All rates are per machine per second at Mk 0. `build` = one-time cost to construct one:
-a **credit** cost that scales ×1.15 per machine owned (an optional per-machine `build.mult`
-overrides this — the Robotics/Singularity chain scales **steeper**, 1.18→1.30, so mass-producing
-robots is a deliberate, escalating investment the meta can't fully trivialize), plus a **flat
-component BOM** pulled from storage. `unlock` = machines you must have built for this to appear. Build in
+a **credit** cost that scales per machine owned by `TIER_MULT[tier]` — **steepening with tier**
+(1.15 raw → 1.19 components → 1.30 complex → **1.55 Singularity**), so high-tier machines get
+exponentially expensive to stack. This is the core of the **prestige wall** (§9a): a single run
+can't brute-force the endgame, because late costs outrun a run's bounded income. (A per-machine
+`build.mult` can still override the tier default.) Plus a **flat component BOM** pulled from storage. `unlock` = machines you must have built for this to appear. Build in
 **×1 / ×10 / Max** batches (a shared toggle covering machines, generators, warehouses,
 and terminals); *Max* takes the smaller of the credit- and component-limits, so a button
 never promises more than you can actually afford.
@@ -243,6 +244,25 @@ blueprints = floor( (creditsEarnedThisRun / 10000) ^ 0.6 × (1 + bp-stat from tr
 the tree). Enabled once a run would yield ≥1 (~15–20 min for a first prestige). Loop-pacing is
 validated in `test/loops.js` (meta reinvestment ≈1.8× faster than not spending, and widening).
 
+### 9a. The prestige wall (v0.24.0 — target ~30h full playthrough)
+
+Prestige is **mandatory**, not optional. Two coordinated levers stop a single run from
+brute-forcing the endgame:
+
+1. **Exponential cost by tier** (`TIER_MULT`, §5): each machine's per-copy cost scales harder the
+   higher its tier (1.15 → 1.55). Late machines get astronomically expensive to stack — e.g. 15
+   Probe Assemblers cost >1B credits.
+2. **Compressed top-end sells:** high-tier items are the *goal*, not a cash crop (Probe 150K→2.5K,
+   AI Core 15K→900, Robot 2.5K→400, Processor 200→90). Run income comes from selling **abundant
+   mid-tier materials** (rate-bounded), which grows *linearly* while machine costs grow
+   *exponentially* → income asymptotes below cost → the run **walls**.
+
+The only way through the wall is prestige: Blueprint **build-cost discounts** (up to −60%) and
+**production multipliers**, plus the permanent per-age dividend, lift the ceiling each loop, so the
+age ladder is climbed over **many runs** rather than one. Exact pacing (targeting ~30h) is tuned by
+playtest — the greedy sims stall on power before reaching the wall, so they under-measure it.
+*Next passes: more content depth per age (new intermediates/machines/sub-goals), then fine-tuning.*
+
 ---
 
 ## 10. Automation & Achievements
@@ -327,7 +347,7 @@ The endgame layer *above* Blueprints. Unlocks once you've earned **15 Blueprints
 - **Numbers:** K/M/B/T… then scientific, 3 sig figs.
 - **Testing:** a Node harness (`test/harness.js`) loads the real game script into a VM with a
   stub DOM and exposes the pure logic — no duplicated code. `node test/test.js` runs the
-  assertion suite (73 checks); `node test/balance.js` auto-plays a greedy strategy and prints
+  assertion suite (150+ checks); `node test/balance.js` auto-plays a greedy strategy and prints
   the pacing curve (time-to-first-prestige, when power bites, deep-tier timings).
 - **Juice:** floating "+$"/"+ore" text on sells & mining, a screen flash on prestige, and a
   live **objective bar** that always names your next goal.
@@ -346,7 +366,11 @@ The endgame layer *above* Blueprints. Unlocks once you've earned **15 Blueprints
 ## 14. UI map
 
 Top bar (Credits +/s · Blueprints · **⚡ Power %** · **🔊 sound** · **📊 HUD** · Restructure) → tab nav → **objective bar**
-(your current goal) → always-visible resource ticker (amount / cap, net/s, fill bar, "$" sell).
+(your current goal) → always-visible resource ticker (amount / cap, flow rate, fill bar, "$" sell).
+Each chip leads with **gross production** (`▲X/s` — how much you're actually making, smoothed from
+`stats.made` deltas), falling back to net drain for consumed-only items; a buffer pinned at cap shows a
+stable amount + a `full` tag (no jitter), and hovering reveals both production and net. Reading the flow
+this way makes bottlenecks legible even when net ≈ 0.
 
 **Session HUD** (📊 top-bar button or the `` ` `` key) — a lightweight, always-on-top playtest
 overlay that instruments a live run: session time, current Age, income/min, power % + accumulator
