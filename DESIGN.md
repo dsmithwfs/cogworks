@@ -130,9 +130,13 @@ levels demand advanced components, tying upgrades back into the crafting economy
   waste; the bottleneck is always visible via the red "■ output full" / "⚠ starved"
   status on each machine and the red cap bar on each resource chip.
 
-**Trade Terminal** — the sink: build one (credits + Plates + Gears) and pick any
-resource to **auto-sell** for Credits. Higher Mk sells faster. Combined with caps, this
-turns overflow into income. Manual per-resource "$" sell buttons remain for bootstrap.
+**Trade Terminal** — the sink: build one (credits + Plates + Gears) and either pick a
+single resource to **auto-sell** for Credits, or choose **⚙️ Sell overstock (auto)** — a
+pressure-relief mode that sells the surplus of *every* item above `OVERSTOCK_KEEP` (90%) of
+its cap, fullest buffer first, within the terminal's throughput. Because it only shaves the
+top slice (never below 90%), it relieves backpressure and monetises wasted overflow without
+starving any downstream recipe. Higher Mk sells faster. Manual per-resource "$" sell buttons
+remain for bootstrap.
 
 ---
 

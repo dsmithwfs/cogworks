@@ -299,7 +299,7 @@
     </div>
     <div class="panel" id="marketPanel">
       <h2>💹 Trade Terminal</h2>
-      <p class="muted" style="margin:0 0 8px">Build a Trade Terminal to auto-sell one resource for Credits. Higher Mk = faster selling.</p>
+      <p class="muted" style="margin:0 0 8px">Build a Trade Terminal to auto-sell for Credits — pick one resource, or <b>⚙️ Sell overstock</b> to auto-clear whatever's piling up (surplus above 90% of each cap, fullest first). Higher Mk = faster selling.</p>
       <div class="row2" style="max-width:520px">
         <button class="b mk" id="btnMarket">Build Trade Terminal<small id="marketCost"></small></button>
         <select id="marketSel"></select>
@@ -384,7 +384,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.21.0";
+const VERSION = "0.22.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -643,6 +643,8 @@ const patentsUnlocked = () => (state.stats.bpEarned||0) >= PATENT_UNLOCK || (sta
 
 const WAREHOUSE = {base:500, mult:1.15, bom:{brick:10}};
 const MARKET = {base:2000, mult:1.18, bom:{ironPlate:10,gear:10}, rate:2}; // sells 2 items/s/terminal at Mk0
+const MARKET_OVERSTOCK = "__overstock__";          // sentinel marketItem: auto-sell surplus instead of one resource
+const OVERSTOCK_KEEP = 0.9;                         // overstock mode leaves this fraction of each cap as working stock
 
 // Power — a cross-cutting constraint. Machines draw power (by tier, scaled by Mk);
 // generators supply it. Under-supply throttles the WHOLE factory proportionally.
@@ -858,12 +860,22 @@ function simulate(dt, eff){
     for(const r in m.in)  state.items[r] -= inF(r)*cyc;
     for(const r in m.out){ const add=m.out[r]*cyc; state.items[r]+=add; state.stats.produced+=add; state.stats.made[r]=(state.stats.made[r]||0)+add; }
   }
-  // Trade terminals auto-sell chosen item
-  if(state.markets>0 && state.marketItem && ITEMS[state.marketItem]){
-    let cyc = state.markets * MARKET.rate * (1+0.5*state.marketMk) * gr * dt;
-    cyc = Math.min(cyc, (state.items[state.marketItem]||0));
-    cyc *= eff;
-    if(cyc>0){ state.items[state.marketItem]-=cyc; addCredits(cyc*ITEMS[state.marketItem].sell*mm); }
+  // Trade terminals auto-sell: either one chosen item, or "overstock" (surplus above OVERSTOCK_KEEP of each cap)
+  if(state.markets>0){
+    const thru = state.markets * MARKET.rate * (1+0.5*state.marketMk) * gr * dt;
+    if(state.marketItem===MARKET_OVERSTOCK){
+      let budget = thru * eff;
+      const over=[];
+      for(const id in ITEMS){ if(!itemUnlocked(id)) continue;
+        const floor=capOf(id)*OVERSTOCK_KEEP, excess=(state.items[id]||0)-floor;
+        if(excess>1e-9) over.push({id, excess, fill:(state.items[id]||0)/capOf(id)}); }
+      over.sort((a,b)=>b.fill-a.fill);              // relieve the most-backed-up buffers first
+      for(const o of over){ if(budget<=1e-9) break; const q=Math.min(budget, o.excess);
+        state.items[o.id]-=q; addCredits(q*ITEMS[o.id].sell*mm); budget-=q; }
+    } else if(state.marketItem && ITEMS[state.marketItem]){
+      const cyc = Math.min(thru, state.items[state.marketItem]||0) * eff;
+      if(cyc>0){ state.items[state.marketItem]-=cyc; addCredits(cyc*ITEMS[state.marketItem].sell*mm); }
+    }
   }
 }
 
@@ -1091,7 +1103,8 @@ function ensureMarketSel(){
   const sel=el("marketSel");
   const want=Object.keys(ITEMS).filter(itemUnlocked);
   if(sel.dataset.count==String(want.length)) return;
-  sel.innerHTML=want.map(id=>`<option value="${id}">${ITEMS[id].ic} ${ITEMS[id].n} — ${money(ITEMS[id].sell)}</option>`).join("");
+  sel.innerHTML=`<option value="${MARKET_OVERSTOCK}">⚙️ Sell overstock (auto)</option>`
+    + want.map(id=>`<option value="${id}">${ITEMS[id].ic} ${ITEMS[id].n} — ${money(ITEMS[id].sell)}</option>`).join("");
   sel.value=state.marketItem; sel.dataset.count=String(want.length);
 }
 function ensureGenerators(){
@@ -1536,6 +1549,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.22.0","Trade Terminal can now Sell Overstock: pick ⚙️ Sell overstock (auto) in the terminal's dropdown and it auto-sells whatever's piling up — the surplus above 90% of each item's cap, clearing the fullest buffers first. Great for turning wasted overflow into Credits and relieving backpressure without babysitting a single resource. It never sells below 90%, so it won't starve your production lines."],
   ["0.21.0","New Advancement: 🌳 Industry → Blast Furnace (+50% smelter output — Iron/Copper Furnace, Steel Mill, Alloy Furnace & Foundry). Iron Plate is the game's load-bearing intermediate, so it's often your tightest buffer in the early ages; this is a dedicated lever that rewards investing in smelting throughput to relieve that pinch — instead of only building more furnaces by hand."],
   ["0.20.0","Session HUD: a toggleable playtest overlay (📊 header button or the ` key) showing income/min, your current bottleneck (the emptiest consumed buffer), chain health (starved vs full machines), power & charge, per-age pacing, and manual-click count — so you (and future tuning) can see exactly where a run drags."],
   ["0.19.0","Visual polish: added depth and finish throughout — layered panel/card shadows, an accent underline on the active tab, a soft glow on affordable & Restructure buttons, card hover lift, section-header rules, and a themed scrollbar. Purely cosmetic."],
@@ -1602,7 +1616,7 @@ function wire(){
   el("btnWarehouse").addEventListener("click",buildWarehouse);
   el("btnMarket").addEventListener("click",buildMarket);
   el("btnMarketMk").addEventListener("click",mkMarket);
-  el("marketSel").addEventListener("change",e=>{ state.marketItem=e.target.value; });
+  el("marketSel").addEventListener("change",e=>{ state.marketItem=e.target.value; updateUI(); });
   el("btnPrestige").addEventListener("click",doPrestige);
   el("generators").addEventListener("click",e=>{ const a=e.target.closest("[data-gauto]"),b=e.target.closest("[data-gen]");
     if(a){ const key="gen:"+a.dataset.gauto; state.auto[key]=!state.auto[key]; updateUI(); }

@@ -41,7 +41,9 @@ when you close the tab. Offline progress is applied when you return.
    **Steam Engines burn Coal** (which competes with your furnaces!), while Solar and Fusion
    cost no fuel but need advanced components.
 5. Raise storage caps with **Warehouses** (📦 Storage & Trade), and build a **Trade
-   Terminal** there to auto-sell a resource for a steady Credit income.
+   Terminal** there to auto-sell for a steady Credit income — pick a single resource, or
+   choose **⚙️ Sell overstock** to automatically clear whatever's piling up (the surplus
+   above 90% of each cap, fullest buffer first) so overflow never throttles your line.
 6. Upgrade any machine's **Mk** level (+50% throughput each) — this also spends components
    *and* raises its power draw, so growth competes with production on every front.
 7. When growth stalls, **Restructure** for **Blueprints** and spend them in the **🌳

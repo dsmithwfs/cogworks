@@ -24,7 +24,7 @@ const fake = new Proxy(function () {}, {
 // The list of engine identifiers exposed to tests. They exist in index.html's top script scope.
 const EXPORTS = [
   "VERSION", "PRESTIGE_SCALE", "TP_SCALE", "BASE_GRID", "DRAW",
-  "ITEMS", "MACHINES", "MORDER", "GENERATORS", "GORDER", "WAREHOUSE", "MARKET",
+  "ITEMS", "MACHINES", "MORDER", "GENERATORS", "GORDER", "WAREHOUSE", "MARKET", "MARKET_OVERSTOCK", "OVERSTOCK_KEEP",
   "START_MACHINES", "START_ITEMS", "NODES", "EDGES", "MILESTONES", "TALENTS", "TIER_REQ",
   "defaultState", "freshRun", "migrate",
   "recomputeStats", "st",

@@ -402,6 +402,37 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("smelt lever does NOT boost non-smelters", (E.state.items.gear || 0) > 0.95 && (E.state.items.gear || 0) < 1.05);
 })();
 
+// ---------------------------------------------------------------- trade terminal: sell overstock
+(() => {
+  // With a terminal in overstock mode, an item pinned at its cap gets its surplus (above 90%) sold,
+  // while an item below the 90% floor is left untouched.
+  fresh();
+  E.state.markets = 1; E.state.marketMk = 0; E.state.marketItem = E.MARKET_OVERSTOCK;
+  const oreCap = E.capOf("ironOre");
+  E.state.items.ironOre = oreCap;                 // fully overstocked
+  E.state.items.coal = E.capOf("coal") * 0.5;     // below the 90% floor
+  const cr0 = E.state.credits;
+  E.simulate(1, 1);
+  ok("overstock sells the full buffer's surplus", E.state.items.ironOre < oreCap);
+  ok("overstock never sells below the 90% floor", E.state.items.ironOre >= oreCap * E.OVERSTOCK_KEEP - 1e-6);
+  ok("overstock leaves non-overstocked items alone", Math.abs(E.state.items.coal - E.capOf("coal") * 0.5) < 1e-6);
+  ok("overstock earns credits", E.state.credits > cr0);
+
+  // Throughput is bounded by the terminal (1 terminal, Mk0 = 2/s), even with a huge surplus.
+  fresh();
+  E.state.markets = 1; E.state.marketMk = 0; E.state.marketItem = E.MARKET_OVERSTOCK;
+  const before = E.state.items.ironOre = E.capOf("ironOre");
+  E.simulate(1, 1);
+  ok("overstock respects terminal throughput (<=2/s at Mk0)", before - E.state.items.ironOre <= 2 + 1e-6);
+
+  // Single-item mode still works unchanged (regression guard).
+  fresh();
+  E.state.markets = 1; E.state.marketItem = "ironOre"; E.state.items.ironOre = 100;
+  const c0 = E.state.credits;
+  E.simulate(1, 1);
+  ok("single-item sell still works", E.state.items.ironOre < 100 && E.state.credits > c0);
+})();
+
 // ---------------------------------------------------------------- summary
 console.log(`\n${fail === 0 ? "✓ ALL PASSED" : "✗ FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
