@@ -68,8 +68,10 @@ and expanding their storage is a real decision.
 ## 4. Machines (26)
 
 All rates are per machine per second at Mk 0. `build` = one-time cost to construct one:
-a **credit** cost that scales ×1.15 per machine owned, plus a **flat component BOM**
-pulled from storage. `unlock` = machines you must have built for this to appear. Build in
+a **credit** cost that scales ×1.15 per machine owned (an optional per-machine `build.mult`
+overrides this — the Robotics/Singularity chain scales **steeper**, 1.18→1.30, so mass-producing
+robots is a deliberate, escalating investment the meta can't fully trivialize), plus a **flat
+component BOM** pulled from storage. `unlock` = machines you must have built for this to appear. Build in
 **×1 / ×10 / Max** batches (a shared toggle covering machines, generators, warehouses,
 and terminals); *Max* takes the smaller of the credit- and component-limits, so a button
 never promises more than you can actually afford.
@@ -145,7 +147,8 @@ remain for bootstrap.
 A cross-cutting throttle. Every machine **draws power**; if supply can't meet demand, the
 *entire* factory runs slower in proportion (`powerRatio = min(1, supply/demand)`).
 
-- **Demand** = Σ `DRAW[tier] × count × Mk-multiplier`. Draw by tier: Extraction/Smelting
+- **Demand** = Σ `DRAW[tier] × count × Mk-multiplier` (× the `powerdraw` penalty), **plus**
+  the Age-V **workforce upkeep** `deployed × 0.5 MW` (see §15). Draw by tier: Extraction/Smelting
   1 MW, Components 2, Advanced 3, Complex 5, Robotics 8, Singularity 12 — and it scales with Mk, so
   upgrading throughput also raises the power bill (power stays relevant late-game).
 - **Base grid** supplies **200 MW free** — enough for the whole early/mid game, so power
@@ -393,11 +396,19 @@ the Factory tab, with an **age banner** up top.
 
 **Phase 2 — Robotic Age signature: the Workforce.** Robots (a high-value product) can be
 **deployed** as workers instead of sold or fed to Probes: production bonus = `√deployed ×
-5%` (diminishing, uncapped but limited by the opportunity cost of not selling/using them).
-It's an **in-run** layer (resets on Restructure), which rewards deep pushes and synergizes
-with the deep-run-rewarding Blueprint curve (deploy → more production → bigger run → more BP).
-Panel lives in the Factory tab, shown once you reach Age V. Recall respects the Robot storage
-cap. This is the template for future per-age signatures.
+5%` (diminishing). It's an **in-run** layer (resets on Restructure), which rewards deep pushes
+and synergizes with the deep-run-rewarding Blueprint curve (deploy → more production → bigger
+run → more BP). Panel lives in the Factory tab, shown once you reach Age V. Recall respects
+the Robot storage cap.
+
+**Power upkeep (v0.23.0).** Each deployed robot draws `WORKFORCE_MW = 0.5` MW of grid power
+(added to demand in `computePower`). Because upkeep is **linear** in `deployed` while the bonus
+is **√**, the marginal robot always costs proportionally more power than it returns production —
+so the workforce **self-limits** at whatever your grid can sustain, instead of snowballing for
+free. Fielding a large workforce is now a real power *investment* (build generators/accumulators),
+and over-deploying browns out the whole factory (the panel warns when the grid can't cover it).
+This is the general pattern for signatures: an impactful lever that must be *resourced*, not a
+free button. This is the template for future per-age signatures.
 
 **Phase 2 — Industrial Age signature: Accumulators.** Each accumulator adds `80 MWh` of storage
 (built like generators/warehouses, unlocked at the Circuit Fab). In `computePower`, surplus power

@@ -238,10 +238,11 @@
     </div>
 
     <div class="panel" id="workforcePanel" style="display:none">
-      <h2>🤖 Robotic Workforce <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age V signature. Deploy Robots as workers for a production boost (√ diminishing) — or sell them / feed Probes instead.</span></h2>
+      <h2>🤖 Robotic Workforce <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age V signature. Deploy Robots for a production boost (√ diminishing). Each draws grid power, so a big workforce needs real generation — or sell them / feed Probes instead.</span></h2>
       <div class="toolrow">
         <span class="kv" style="min-width:130px">Deployed <b id="wfDeployed" style="margin-left:6px">0</b></span>
         <span class="kv" style="min-width:150px">Production <b id="wfBonus" style="margin-left:6px">+0%</b></span>
+        <span class="kv" style="min-width:150px">Power draw <b id="wfPower" style="margin-left:6px">0 MW</b></span>
       </div>
       <div class="toolrow" style="margin-top:6px">
         <button class="b mk" id="wfDeploy1" style="max-width:100px">Deploy 1</button>
@@ -384,7 +385,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.22.1";
+const VERSION = "0.23.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -471,14 +472,14 @@ const MACHINES = {
   circuitFab:   {n:"Circuit Fab",     ic:"🔌", t:3, rate:1, build:{cr:3000,bom:{copperWire:20,gear:10}},  in:{copperWire:3,ironPlate:1},      out:{circuit:1},   mkItem:"steel",    unlock:{wireMill:1,steelMill:1}},
   motorWinder:  {n:"Motor Winder",    ic:"🌀", t:3, rate:1, build:{cr:4000,bom:{copperWire:20,steel:10}}, in:{copperWire:3,steel:1},          out:{motor:1},     mkItem:"steel",    unlock:{circuitFab:1}},
 
-  assembler:    {n:"Assembler",       ic:"🛠️", t:4, rate:1, build:{cr:8000,bom:{circuit:20,gear:20,steel:10}}, in:{gear:2,circuit:1},         out:{mechanism:1}, mkItem:"steel",    unlock:{circuitFab:1}},
-  gearworks:    {n:"Gearworks",       ic:"🔧", t:4, rate:1, build:{cr:12000,bom:{motor:15,gear:20,steel:10}}, in:{motor:1,gear:1},          out:{mechanism:1}, mkItem:"steel",    unlock:{assembler:1,motorWinder:1}},
-  chipFab:      {n:"Chip Fab",        ic:"💾", t:4, rate:1, build:{cr:15000,bom:{circuit:30,silicon:15,plastic:15}}, in:{circuit:3,silicon:1,plastic:1}, out:{processor:1}, mkItem:"mechanism", unlock:{assembler:1}},
+  assembler:    {n:"Assembler",       ic:"🛠️", t:4, rate:1, build:{cr:10000,mult:1.18,bom:{circuit:20,gear:20,steel:10}}, in:{gear:2,circuit:1},         out:{mechanism:1}, mkItem:"steel",    unlock:{circuitFab:1}},
+  gearworks:    {n:"Gearworks",       ic:"🔧", t:4, rate:1, build:{cr:14000,mult:1.18,bom:{motor:15,gear:20,steel:10}}, in:{motor:1,gear:1},          out:{mechanism:1}, mkItem:"steel",    unlock:{assembler:1,motorWinder:1}},
+  chipFab:      {n:"Chip Fab",        ic:"💾", t:4, rate:1, build:{cr:22000,mult:1.20,bom:{circuit:30,silicon:15,plastic:15}}, in:{circuit:3,silicon:1,plastic:1}, out:{processor:1}, mkItem:"mechanism", unlock:{assembler:1}},
 
-  roboticsLab:  {n:"Robotics Lab",    ic:"🦾", t:5, rate:1, build:{cr:40000,bom:{mechanism:20,processor:10,steel:30}}, in:{mechanism:2,processor:1,steel:1}, out:{robotArm:1}, mkItem:"processor", unlock:{chipFab:1}},
-  robotAssembler:{n:"Robot Assembler",ic:"🤖", t:5, rate:1, build:{cr:100000,bom:{robotArm:10,processor:10,mechanism:20}}, in:{robotArm:1,processor:1,mechanism:1}, out:{robot:1}, mkItem:"processor", unlock:{roboticsLab:1}},
-  aiFoundry:  {n:"AI Foundry",     ic:"🧠", t:6, rate:1, build:{cr:400000,bom:{processor:30,robotArm:15,circuit:50}},  in:{processor:2,robotArm:1},   out:{aiCore:1}, mkItem:"aiCore",   unlock:{robotAssembler:1}},
-  probeAssembler:{n:"Probe Assembler",ic:"🛰️", t:6, rate:1, build:{cr:2000000,bom:{aiCore:15,robot:15,steel:80}},    in:{aiCore:1,robot:1,steel:2},  out:{probe:1}, mkItem:"aiCore",   unlock:{aiFoundry:1}},
+  roboticsLab:  {n:"Robotics Lab",    ic:"🦾", t:5, rate:1, build:{cr:70000,mult:1.24,bom:{mechanism:20,processor:10,steel:30}}, in:{mechanism:2,processor:1,steel:1}, out:{robotArm:1}, mkItem:"processor", unlock:{chipFab:1}},
+  robotAssembler:{n:"Robot Assembler",ic:"🤖", t:5, rate:1, build:{cr:200000,mult:1.28,bom:{robotArm:10,processor:10,mechanism:20}}, in:{robotArm:1,processor:1,mechanism:1}, out:{robot:1}, mkItem:"processor", unlock:{roboticsLab:1}},
+  aiFoundry:  {n:"AI Foundry",     ic:"🧠", t:6, rate:1, build:{cr:700000,mult:1.30,bom:{processor:30,robotArm:15,circuit:50}},  in:{processor:2,robotArm:1},   out:{aiCore:1}, mkItem:"aiCore",   unlock:{robotAssembler:1}},
+  probeAssembler:{n:"Probe Assembler",ic:"🛰️", t:6, rate:1, build:{cr:3000000,mult:1.30,bom:{aiCore:15,robot:15,steel:80}},    in:{aiCore:1,robot:1,steel:2},  out:{probe:1}, mkItem:"aiCore",   unlock:{aiFoundry:1}},
 };
 const MORDER = Object.keys(MACHINES);          // already in raw->finished order
 const START_MACHINES = ["miner","coalDrill","ironFurnace"];
@@ -731,6 +732,8 @@ const fuelMult     = () => Math.max(0.25, 1 - st("fuel"));
 const demandMult   = () => 1 + st("powerdraw");
 const smeltMult    = () => 1 + st("smelt");        // smelter-only output bonus (furnaces, mills, foundry)
 const workforceBonus = () => Math.sqrt(state.deployed||0) * 0.05;   // Robotic-age: √deployed × 5% production
+const WORKFORCE_MW   = 0.5;                         // grid upkeep per deployed robot — big workforces need real power
+const workforceDraw  = () => (state.deployed||0) * WORKFORCE_MW;    // linear cost vs √ benefit → self-limiting
 
 /* =========================================================================
    COSTS
@@ -754,7 +757,7 @@ function planBuild(baseCr, mult, owned, bom, cap){
 }
 function scaleBOM(bom, n){ const o={}; for(const r in (bom||{})) o[r]=bom[r]*n; return o; }
 function buildBOM(key){ return MACHINES[key].build.bom || {}; }
-const planMachine   = (key,cap) => planBuild(MACHINES[key].build.cr, 1.15, state.machines[key]||0, buildBOM(key), cap);
+const planMachine   = (key,cap) => planBuild(MACHINES[key].build.cr, MACHINES[key].build.mult||1.15, state.machines[key]||0, buildBOM(key), cap);
 const planGenerator = (key,cap) => planBuild(GENERATORS[key].build.cr, GENERATORS[key].build.mult, state.generators[key]||0, GENERATORS[key].build.bom, cap);
 const planWarehouse = cap => planBuild(WAREHOUSE.base, WAREHOUSE.mult, state.warehouses, WAREHOUSE.bom, cap);
 const planMarket    = cap => planBuild(MARKET.base, MARKET.mult, state.markets, MARKET.bom, cap);
@@ -819,6 +822,7 @@ function computePower(dt){
   let demand = 0;
   for(const key of MORDER){ const c=state.machines[key]||0; if(c>0) demand += DRAW[MACHINES[key].t]*c*mkMult(key); }
   demand *= demandMult();
+  demand += workforceDraw();                          // deployed robots draw grid power (Age V workforce upkeep)
   const steamCap = (state.generators.steam||0) * GENERATORS.steam.power * gm;
   const wantPower = Math.min(steamCap, Math.max(0, demand - free));
   const coalPerMW = (GENERATORS.steam.fuel.coal * fuelMult()) / (GENERATORS.steam.power * gm);
@@ -1167,7 +1171,11 @@ function updateUI(){
     if(showWF){ const avail=Math.floor(state.items.robot||0);
       el("wfDeployed").textContent=fmt(state.deployed||0);
       el("wfBonus").textContent="+"+Math.round(workforceBonus()*100)+"%";
-      el("wfHint").textContent=`${fmt(avail)} robot${avail===1?"":"s"} available to deploy`;
+      el("wfPower").textContent=fmt(workforceDraw())+" MW";
+      const brownout=(state.deployed||0)>0 && lastPower.ratio<0.999;
+      el("wfHint").innerHTML = brownout
+        ? `<span class="warn">⚠ Workforce is under-powered (grid at ${Math.round(lastPower.ratio*100)}%) — build generators or recall robots.</span>`
+        : `${fmt(avail)} robot${avail===1?"":"s"} available to deploy`;
       el("wfDeploy1").disabled=avail<1; el("wfDeploy10").disabled=avail<1; el("wfDeployMax").disabled=avail<1;
       el("wfRecall").disabled=(state.deployed||0)<1;
     } }
@@ -1551,6 +1559,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.23.0","Longer late game + Workforce rebalance. Deployed Robots now draw grid power (~0.5 MW each), so a big workforce needs real generators — fielding thousands of robots for free is out; it's now a genuine power investment that self-limits (linear power cost vs √ production benefit). The Robotics/Singularity chain (Assembler → Chip Fab → Robotics Lab → Robot Assembler → AI Foundry → Probe Assembler) also costs more up front and scales steeper per copy, so reaching and mass-producing robots is a longer, more deliberate haul."],
   ["0.22.1","Bugfix: talents no longer reset when you reload the page. An old one-time migration was wiping your purchased talent ranks (and recomputing Talent Points) on every load — now your talents and TP are preserved across refreshes like everything else."],
   ["0.22.0","Trade Terminal can now Sell Overstock: pick ⚙️ Sell overstock (auto) in the terminal's dropdown and it auto-sells whatever's piling up — the surplus above 90% of each item's cap, clearing the fullest buffers first. Great for turning wasted overflow into Credits and relieving backpressure without babysitting a single resource. It never sells below 90%, so it won't starve your production lines."],
   ["0.21.0","New Advancement: 🌳 Industry → Blast Furnace (+50% smelter output — Iron/Copper Furnace, Steel Mill, Alloy Furnace & Foundry). Iron Plate is the game's load-bearing intermediate, so it's often your tightest buffer in the early ages; this is a dedicated lever that rewards investing in smelting throughput to relieve that pinch — instead of only building more furnaces by hand."],

@@ -452,6 +452,43 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("legacy save migrates without losing state", typeof lg.talentPoints === "number" && typeof lg.talents === "object");
 })();
 
+// ---------------------------------------------------------------- workforce power upkeep (Age V)
+(() => {
+  fresh();
+  E.state.machines.ironFurnace = 5;               // some baseline machine demand
+  E.computePower(1);
+  const d0 = E.lastPower.demand;
+  E.state.deployed = 100;                          // field a workforce
+  E.computePower(1);
+  const d1 = E.lastPower.demand;
+  ok("deployed robots add grid demand", Math.abs((d1 - d0) - 100 * E.WORKFORCE_MW) < 1e-6);
+  ok("workforceDraw = deployed * WORKFORCE_MW", Math.abs(E.workforceDraw() - 100 * E.WORKFORCE_MW) < 1e-6);
+
+  // linear upkeep vs √ benefit => the marginal robot costs more power than it returns bonus at scale
+  E.state.deployed = 400;  const b400 = E.workforceBonus(), p400 = E.workforceDraw();
+  E.state.deployed = 1600; const b1600 = E.workforceBonus(), p1600 = E.workforceDraw();
+  ok("4x the workforce = 4x power but only 2x bonus (self-limiting)",
+    Math.abs(p1600 / p400 - 4) < 1e-6 && Math.abs(b1600 / b400 - 2) < 1e-6);
+})();
+
+// ---------------------------------------------------------------- robot-chain steeper scaling
+(() => {
+  ok("robot-chain machines carry a steeper build.mult",
+    E.MACHINES.robotAssembler.build.mult === 1.28 && E.MACHINES.aiFoundry.build.mult === 1.30 && E.MACHINES.roboticsLab.build.mult === 1.24);
+  ok("early machines keep default (undefined => 1.15) scaling", E.MACHINES.ironFurnace.build.mult === undefined);
+
+  // planMachine reflects the per-machine mult in the next-copy unit price
+  fresh(); E.state.unlocked.robotAssembler = true;
+  E.state.machines.robotAssembler = 0; const u0 = E.planMachine("robotAssembler", 1).unit;
+  E.state.machines.robotAssembler = 1; const u1 = E.planMachine("robotAssembler", 1).unit;
+  ok("robot chain scales at its steeper mult (~1.28)", Math.abs(u1 / u0 - 1.28) < 0.01);
+
+  fresh();
+  E.state.machines.gearPress = 0; const g0 = E.planMachine("gearPress", 1).unit;
+  E.state.machines.gearPress = 1; const g1 = E.planMachine("gearPress", 1).unit;
+  ok("early chain still scales at 1.15", Math.abs(g1 / g0 - 1.15) < 0.01);
+})();
+
 // ---------------------------------------------------------------- summary
 console.log(`\n${fail === 0 ? "✓ ALL PASSED" : "✗ FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -39,6 +39,7 @@ const EXPORTS = [
   "talentCost", "talentSpent", "tierUnlocked",
   "PATENTS", "PATENT_UNLOCK", "PATENT_SCALE", "patentCost", "patentAvailable", "patentsUnlocked",
   "AGES", "TIER_AGE", "ROMAN", "currentAge", "workforceBonus", "deployRobots", "recallRobots",
+  "WORKFORCE_MW", "workforceDraw",
   "ACCUMULATOR", "planAccumulator", "autoBuild", "AGE_GOALS", "checkAgeGoals", "SND", "bottleneck", "chainHealth",
 ];
 
