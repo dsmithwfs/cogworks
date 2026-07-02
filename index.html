@@ -384,7 +384,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.22.0";
+const VERSION = "0.22.1";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -1423,9 +1423,11 @@ function migrate(s){
   out.autoBalance = !!s.autoBalance;
   out.sound = (typeof s.sound==="boolean") ? s.sound : true;
   out.hud = !!s.hud;
-  out.talents={};                                  // talent set was redefined (efficiency-only) — reset ranks
-  out.tpClaimed = Math.floor(Math.sqrt((out.stats.produced||0)/TP_SCALE));
-  out.talentPoints = out.tpClaimed;                // Talent Points are now production-earned
+  out.talents = Object.assign({}, s.talents||{});  // preserve purchased talent ranks across reloads
+  // tpClaimed = total TP ever earned; talentPoints = current unspent balance. Preserve both from the
+  // save; only fall back to a recompute for legacy saves that predate these fields (produced-derived).
+  out.tpClaimed = (typeof s.tpClaimed==="number") ? s.tpClaimed : Math.floor(Math.sqrt((out.stats.produced||0)/TP_SCALE));
+  out.talentPoints = (typeof s.talentPoints==="number") ? s.talentPoints : out.tpClaimed;
   out.patents = s.patents||0;
   out.patentUpg = Object.assign({}, s.patentUpg||{});
   out.bpCycle = s.bpCycle||0;
@@ -1549,6 +1551,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.22.1","Bugfix: talents no longer reset when you reload the page. An old one-time migration was wiping your purchased talent ranks (and recomputing Talent Points) on every load — now your talents and TP are preserved across refreshes like everything else."],
   ["0.22.0","Trade Terminal can now Sell Overstock: pick ⚙️ Sell overstock (auto) in the terminal's dropdown and it auto-sells whatever's piling up — the surplus above 90% of each item's cap, clearing the fullest buffers first. Great for turning wasted overflow into Credits and relieving backpressure without babysitting a single resource. It never sells below 90%, so it won't starve your production lines."],
   ["0.21.0","New Advancement: 🌳 Industry → Blast Furnace (+50% smelter output — Iron/Copper Furnace, Steel Mill, Alloy Furnace & Foundry). Iron Plate is the game's load-bearing intermediate, so it's often your tightest buffer in the early ages; this is a dedicated lever that rewards investing in smelting throughput to relieve that pinch — instead of only building more furnaces by hand."],
   ["0.20.0","Session HUD: a toggleable playtest overlay (📊 header button or the ` key) showing income/min, your current bottleneck (the emptiest consumed buffer), chain health (starved vs full machines), power & charge, per-age pacing, and manual-click count — so you (and future tuning) can see exactly where a run drags."],

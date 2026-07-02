@@ -433,6 +433,25 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("single-item sell still works", E.state.items.ironOre < 100 && E.state.credits > c0);
 })();
 
+// ---------------------------------------------------------------- talents persist across reload (migrate)
+(() => {
+  // Simulate a saved game with purchased talents, then load it (migrate) as a page refresh would.
+  const saved = E.defaultState();
+  saved.talents = { extract: 4, master: 2 };
+  saved.talentPoints = 9;
+  saved.tpClaimed = 31;
+  const loaded = E.migrate(JSON.parse(JSON.stringify(saved)));   // JSON round-trip mimics localStorage
+  ok("reload preserves talent ranks", loaded.talents.extract === 4 && loaded.talents.master === 2);
+  ok("reload preserves unspent talentPoints", loaded.talentPoints === 9);
+  ok("reload preserves tpClaimed (so grantTP won't re-grant)", loaded.tpClaimed === 31);
+
+  // Legacy save missing the fields falls back gracefully (no crash, points derived from production).
+  const legacy = E.defaultState(); delete legacy.talents; delete legacy.talentPoints; delete legacy.tpClaimed;
+  legacy.stats.produced = 40000;
+  const lg = E.migrate(JSON.parse(JSON.stringify(legacy)));
+  ok("legacy save migrates without losing state", typeof lg.talentPoints === "number" && typeof lg.talents === "object");
+})();
+
 // ---------------------------------------------------------------- summary
 console.log(`\n${fail === 0 ? "✓ ALL PASSED" : "✗ FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
