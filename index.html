@@ -407,7 +407,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.29.2";
+const VERSION = "0.30.1";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -444,7 +444,7 @@ const AGE_GOALS = [ null,
 // Hard age-gate: an age's machines stay LOCKED until you've earned this many 📐 Blueprints TOTAL
 // (a permanent, prestige-only metric). Ages I–III are free; IV+ require Restructuring to advance —
 // this is what makes prestige mandatory. Already-built machines are never re-locked. (index = age)
-const AGE_REQ = [0, 0, 0, 0, 3, 15, 50];
+const AGE_REQ = [0, 0, 0, 0, 10, 80, 400];   // total Blueprints earned to unlock each age (v0.30.0: spread ages across the journey)
 const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet"];  // per-age signature label (for the roadmap)
 
 // id: [name, icon, tier, storageCap, sellValue]
@@ -522,7 +522,7 @@ const START_ITEMS = ["ironOre","coal","ironPlate"];
 const M=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"minor"});
 const N=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"notable"});
 const K=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"keystone"});
-const ARMS = [
+const ARMS_SRC = [
   {key:"ind", angle:-90, rings:[
     {spine:M("Tooling I","+8% global production",{prod:.08},2),          side:[M("Bulk Hoppers","+10% storage caps",{cap:.10},2)]},
     {spine:M("Tooling II","+10% global production",{prod:.10},3),          side:[N("Blast Furnace","+50% smelter output — Iron/Copper Furnace, Steel Mill, Alloy Furnace & Foundry",{smelt:.50},6)]},
@@ -572,6 +572,40 @@ const ARMS = [
     {spine:K("Singularity","+150% Blueprints, +50% offline rate, +50% production",{bp:1.5,offeff:.5,prod:.5},40)},
   ]},
 ];
+// --- Procedural tree expansion: keep the hand-authored inner rings (named nodes + their IDs, so saves &
+// tests stay valid), then extend each arm with many themed rings out to TREE_DEPTH, keystone at the tip.
+const TREE_DEPTH = 20;                                 // rings per arm incl. keystone → ~300 nodes total
+const ARM_GEN = {
+  ind:{title:"Industry",    prim:{k:"prod", v:0.05, label:"global production"},        sec:{k:"cap",   v:0.05, label:"storage caps"}},
+  log:{title:"Logistics",   prim:{k:"cap",  v:0.07, label:"storage caps"},             sec:{k:"prod",  v:0.03, label:"global production"}},
+  pow:{title:"Power",       prim:{k:"power",v:0.07, label:"generator output"},         sec:{k:"grid",  v:8,    label:"MW base grid", flat:true}},
+  com:{title:"Commerce",    prim:{k:"sell", v:0.07, label:"sale value"},               sec:{k:"prod",  v:0.03, label:"global production"}},
+  eng:{title:"Engineering", prim:{k:"prod", v:0.05, label:"global production"},        sec:{k:"click", v:2,    label:"ore per click", flat:true}},
+  asc:{title:"Ascendancy",  prim:{k:"bp",   v:0.06, label:"Blueprints / Restructure"}, sec:{k:"offeff",v:0.04, label:"offline rate"}},
+};
+function genNode(stat, mult, cost, notable, g, ri, tag){
+  const v = stat.flat ? Math.round(stat.v*mult) : +(stat.v*mult).toFixed(3);
+  const desc = stat.flat ? `+${v} ${stat.label}` : `+${Math.round(v*100)}% ${stat.label}`;
+  const name = notable ? `${g.title} Nexus` : `${g.title} ${ri}${tag||''}`;
+  return (notable?N:M)(name, desc, {[stat.k]: v}, cost);
+}
+function genRing(g, ri){
+  const cost = 4 + Math.round(Math.pow(ri, 1.35));    // escalating cost outward
+  const notable = ri % 4 === 0;
+  const spine = genNode(g.prim, notable?4:1, notable?cost*2:cost, notable, g, ri);
+  const side = [ genNode(g.prim, 1, cost, false, g, ri, "a"), genNode(g.sec, 1, cost, false, g, ri, "b") ];
+  return {spine, side};
+}
+function buildArms(){
+  return ARMS_SRC.map(arm=>{
+    const g = ARM_GEN[arm.key], rings=[]; let keystone=null;
+    arm.rings.forEach(r=>{ if(r.spine.type==="keystone") keystone=r.spine; else rings.push(r); });   // keep inner, pull keystone
+    for(let ri=rings.length+1; ri<TREE_DEPTH; ri++) rings.push(genRing(g, ri));                       // extend with generated rings
+    rings.push({spine: Object.assign({}, keystone, {cost: Math.max(keystone.cost*2, 90)})});          // keystone at the tip (pricier)
+    return {key:arm.key, angle:arm.angle, rings};
+  });
+}
+const ARMS = buildArms();
 const CX=800, CY=800, RING=118;                       // tree layout center + ring spacing
 let NODES={}, EDGES=[];
 function linkNodes(a,b){ NODES[a].links.push(b); NODES[b].links.push(a); EDGES.push([a,b]); }
@@ -587,8 +621,8 @@ function buildTreeData(){
         linkNodes(sid, nid); });
       prev=sid; });
   });
-  // cross-arm links: weave between adjacent branches at a mid ring (notables) and near the tips
-  [3,5].forEach(r=>{ for(let i=0;i<ARMS.length;i++){
+  // cross-arm links: weave between adjacent branches at several rings (lets you path sideways through the tree)
+  [3,5,9,13,16].forEach(r=>{ for(let i=0;i<ARMS.length;i++){
     const idA=ARMS[i].key+"_"+r, idB=ARMS[(i+1)%ARMS.length].key+"_"+r;
     if(NODES[idA] && NODES[idB]) linkNodes(idA,idB);
   }});
@@ -1704,6 +1738,8 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.30.1","Pacing rebalance for the bigger tree. The ages are now spread across the journey instead of all unlocking in the first couple hours: the Blueprints needed to reach the Automation, Robotic, and Space ages went up (to 10 / 80 / 400 earned), so you reach robots and probes around the mid-game, and the 300-node tree + self-replicating fleet carry the long tail. Blueprint yield and the tree itself were left as-is — a beefed-up balance sim showed they're already well-scaled."],
+  ["0.30.0","Much bigger Advancement Tree — now 300+ nodes (was ~55). Each of the six arms runs far deeper: long chains of minor nodes, a Nexus notable every few rings, and the keystone moved out to the tip. There's a lot more to path toward across many prestiges, and adjacent arms cross-link at more points so you can weave between them. Your existing tree allocations are preserved (the inner named nodes kept their spots). Node effects/costs are a first pass and will be tuned with playtesting."],
   ["0.29.2","Resource chips no longer bounce around. The resource ticker is now a fixed grid — every chip is the same size and stays put, so when items are filling, draining, or maxing out, the numbers update in place instead of shoving neighbouring chips around. Much easier to click the right one. (The spare-capacity readout was tightened to fit the fixed width; the fill bar already turns red when full.)"],
   ["0.29.1","Full buffers now show your spare production capacity. When an item is maxed out, its chip shows the rate you're actually CAPABLE of making (▲, your true capacity) plus how much per second is going spare because storage is full — e.g. \"▲11/s · full +6.6/s spare\". Now you can see your real output even when it's capped, so you can plan (sell the surplus, add consumers, or expand storage). Hover any chip for the full making/capacity/net breakdown."],
   ["0.29.0","🗺️ Ages Roadmap. Click the age bar (top of the Factory tab) to open a map of all six ages — each showing its status (mastered / current / locked), the Blueprints needed to unlock it, its signature mechanic, and its mastery goal with your progress. Makes the whole gated journey legible: you can see exactly what's ahead and what it'll take to get there."],

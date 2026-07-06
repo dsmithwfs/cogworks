@@ -178,10 +178,17 @@ A cross-cutting throttle. Every machine **draws power**; if supply can't meet de
 
 The prestige "shop" and the **power/capability** meta layer — production multipliers,
 capacity, economy, and unlocks. (Cost-reduction lives in the Talent Tree, §11, so the two
-never overlap.) A large interconnected **passive tree** (~55 nodes) spent with Blueprints.
-Pathing is **Path-of-Exile-style**: a node can be allocated only when an adjacent node is
-already allocated, starting from the central **Core**. Allocations are kept across every
+never overlap.) A large interconnected **passive tree** (**~300 nodes**, v0.30.0) spent with
+Blueprints. Pathing is **Path-of-Exile-style**: a node can be allocated only when an adjacent
+node is already allocated, starting from the central **Core**. Allocations are kept across every
 Restructure — and are fully refundable (see Respec below).
+
+**Structure (v0.30.0):** each arm's hand-authored **inner rings** (the named nodes — preserved by
+ID so saves/tests survive) are procedurally **extended out to `TREE_DEPTH` (20) rings** — long
+chains of themed minors, a **Nexus** notable every 4th ring, the keystone relocated to the tip.
+Generated per arm by `buildArms()` from `ARM_GEN` (each arm has a primary + secondary stat);
+costs escalate `~4 + ri^1.35` outward. Adjacent arms cross-link at rings 3/5/9/13/16 for
+sideways weaving. There's far more to path toward across many prestiges than any one run fills.
 
 **Six themed arms** radiate from the Core, each ending in a **keystone**:
 
@@ -249,10 +256,12 @@ validated in `test/loops.js` (meta reinvestment ≈1.8× faster than not spendin
 Prestige is **mandatory**, not optional. Three coordinated levers stop a single run from
 brute-forcing the endgame:
 
-0. **Hard age-gate (v0.25.0)** — `AGE_REQ = [0,0,0,0,3,15,50]`: an age's machines stay **locked**
-   until you've earned that many 📐 Blueprints *in total* (`stats.bpEarned`, a permanent
-   prestige-only metric). Ages I–III are free; **Age IV needs 3 BP, V needs 15, VI needs 50** — so
-   you literally cannot unlock robots/probes without Restructuring. Enforced in `machineUnlocked`
+0. **Hard age-gate (v0.25.0, retuned v0.30.1)** — `AGE_REQ = [0,0,0,0,10,80,400]`: an age's machines
+   stay **locked** until you've earned that many 📐 Blueprints *in total* (`stats.bpEarned`, a permanent
+   prestige-only metric). Ages I–III are free; **Age IV needs 10 BP, V needs 80, VI needs 400** — so you
+   literally cannot unlock robots/probes without deep Restructuring. The v0.30.1 values (up from 3/15/50)
+   **spread the ages across ~the first half** of the run (sim: IV ~1h, V ~3h, VI ~5h) so the 300-node tree
+   + fleet carry the long tail — validated with `test/loops.js` (BP curve unchanged, ages simply gated later). Enforced in `machineUnlocked`
    /`refreshUnlocks` (`ageUnlocked(age)`); already-built machines are never re-locked. The Factory
    tab shows a 🔒 banner for the next locked age and the objective bar points to prestige. This is
    the *visible, legible* wall; the two below are the economic pressure that makes it bite.

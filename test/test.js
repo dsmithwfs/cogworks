@@ -24,7 +24,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("motor branch exists", !!E.ITEMS.motor && !!E.MACHINES.motorWinder);
   ok("gearworks: alt mechanism route via motor (no circuit)", E.MACHINES.gearworks && E.MACHINES.gearworks.in.motor && E.MACHINES.gearworks.out.mechanism && !E.MACHINES.gearworks.in.circuit);
   eq("generator count", E.GORDER.length, 3);
-  ok("tree has ~56 nodes", Object.keys(E.NODES).length >= 55);
+  ok("tree is large (300+ nodes)", Object.keys(E.NODES).length >= 300);
   eq("milestone count", E.MILESTONES.length, 18);
   eq("talent count", E.TALENTS.length, 9);
   eq("fresh: only Core allocated", Object.keys(s.allocated).length, 1);

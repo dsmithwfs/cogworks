@@ -23,7 +23,11 @@ function strategize() {
     for (const g of E.GORDER) { if (!E.genUnlocked(g)) continue; const p = E.planGenerator(g, 1); if (p.n <= 0) continue; const bom = E.scaleBOM(E.GENERATORS[g].build.bom, p.n); if (!E.canAfford(p.cost, bom)) continue; const sc = E.GENERATORS[g].power * (E.GENERATORS[g].fuel ? 1 : 10); if (sc > score) { score = sc; best = { g, p, bom }; } }
     if (!best) break; E.pay(best.p.cost, best.bom); s.generators[best.g] += best.p.n; } }
   for (const id in E.ITEMS) { if (E.itemUnlocked(id) && (s.items[id] || 0) >= E.capOf(id) - 1e-6) { const p = E.planWarehouse(1); if (p.n > 0 && E.canAfford(p.cost, E.scaleBOM(E.WAREHOUSE.bom, p.n))) { E.pay(p.cost, E.scaleBOM(E.WAREHOUSE.bom, p.n)); s.warehouses += p.n; } break; } }
-  for (let i = 0; i < 12; i++) { let best = null, bc = Infinity; for (const k of E.MORDER) { if (!s.unlocked[k]) continue; const p = E.planMachine(k, 1); if (p.n > 0 && p.cost < bc && E.canAfford(p.cost, E.scaleBOM(E.buildBOM(k), 1))) { bc = p.cost; best = k; } } if (!best) break; const p = E.planMachine(best, 1); E.pay(p.cost, E.scaleBOM(E.buildBOM(best), p.n)); s.machines[best] += p.n; s.stats.built += p.n; E.refreshUnlocks(true); }
+  // scale: build the machine whose OUTPUT buffer is emptiest (most demanded downstream) — keeps the chain balanced
+  for (let i = 0; i < 150; i++) { let best = null, bestFill = Infinity;
+    for (const k of E.MORDER) { if (!s.unlocked[k]) continue; const p = E.planMachine(k, 1); if (p.n <= 0) continue; const bom = E.scaleBOM(E.buildBOM(k), 1); if (!E.canAfford(p.cost, bom)) continue;
+      const out = Object.keys(E.MACHINES[k].out)[0]; const fill = (E.state.items[out] || 0) / E.capOf(out); if (fill < bestFill) { bestFill = fill; best = k; } }
+    if (!best) break; const p = E.planMachine(best, 1); E.pay(p.cost, E.scaleBOM(E.buildBOM(best), 1)); s.machines[best] += p.n; s.stats.built += p.n; E.refreshUnlocks(true); }
 }
 
 // ---- pure meta reinvestment (no DOM) ----
@@ -97,7 +101,7 @@ function printSession(title, s) {
   console.log(`total time over ${s.rows.length} loops: ${clock(s.total)}`);
 }
 
-const LOOPS = 8, CAP = 6 * 3600;
+const LOOPS = 18, CAP = 6 * 3600;
 const withMeta = runSession(true, LOOPS, CAP);
 const control = runSession(false, LOOPS, CAP);
 printSession("WITH meta reinvestment (spend BP in tree + TP in talents)", withMeta);
