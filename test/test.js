@@ -682,6 +682,23 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("spare capacity (potential − actual) is surfaced when full", (potFull - actualFull) > 4.9);
 })();
 
+// ---------------------------------------------------------------- Age III: accumulators boost production
+(() => {
+  fresh();
+  ok("no charge → no accumulator bonus", E.accBonus() === 0);
+
+  E.state.charge = 6400;                                  // ~80 accumulators' worth, full
+  const b = E.accBonus();
+  ok("banked energy grants a √-scaling production bonus", Math.abs(b - E.ACC_BOOST * Math.sqrt(6400)) < 1e-9 && b > 0.3);
+  ok("accumulator bonus feeds globalRate", Math.abs(E.globalRate() - (1 + b)) < 1e-9);
+
+  // the bonus is earned via power surplus: computePower banks surplus into the charge
+  fresh();
+  E.state.accumulators = 5; E.state.machines.miner = 1;   // ~1 MW demand vs 200 MW base grid → big surplus
+  E.computePower(10);
+  ok("accumulators bank surplus power (up to capacity)", E.state.charge > 0 && E.state.charge <= 5 * E.ACCUMULATOR.cap + 1e-6);
+})();
+
 // ---------------------------------------------------------------- summary
 console.log(`\n${fail === 0 ? "✓ ALL PASSED" : "✗ FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

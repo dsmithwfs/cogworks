@@ -479,13 +479,15 @@ and over-deploying browns out the whole factory (the panel warns when the grid c
 This is the general pattern for signatures: an impactful lever that must be *resourced*, not a
 free button. This is the template for future per-age signatures.
 
-**Phase 2 — Industrial Age signature: Accumulators.** Each accumulator adds `80 MWh` of storage
-(built like generators/warehouses, unlocked at the Circuit Fab). In `computePower`, surplus power
-(base grid + fuel-free generators beyond demand) **charges** the bank; a deficit **discharges** it
-to cover the gap, holding the power ratio at 100% until it drains. Value is highest during demand
-*spikes* — notably the Auto-Builder's batch-builds — so Age III's battery deliberately sets up Age
-IV, and it makes fuel-free generators (which do the charging) more valuable. Per-run infrastructure
-(resets on Restructure). Lives in the ⚡ Power tab.
+**Phase 2 — Industrial Age signature: Accumulators (reworked v0.32.0).** Each accumulator adds `80 MWh`
+of storage (built like generators/warehouses, unlocked at the Circuit Fab). Surplus power **charges** the
+bank in `computePower`; a deficit **discharges** it to hold the ratio at 100% (the safety-net). **The
+payoff:** banked energy now **surges production** — `accBonus() = ACC_BOOST(0.008)·√(charge MWh)`, folded
+live into `globalRate()` (so 20 full accumulators ≈ +32%, 80 ≈ +64%). The `√` diminishes so it can't run
+away, and because it scales with *stored* charge it rewards **both** stacking accumulators *and* over-building
+generators to fill them — a genuine power→production investment loop. *(Rationale: the old buffer-only
+version did nothing in a steadily-powered factory — spiky demand barely exists here — so it felt useless.)*
+Per-run infrastructure (resets on Restructure). Panel shows the live % bonus.
 
 **Phase 2 — Automation Age signature: Auto-Balance → whole-factory auto-pilot (v0.31.0).** A toggle
 (shown once the Auto-Builder is unlocked *and* you've reached Age IV) that turns the auto-builder into

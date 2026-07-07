@@ -300,7 +300,7 @@
       <p class="muted" id="genHint" style="margin-top:10px"></p>
     </div>
     <div class="panel" id="accPanel" style="display:none">
-      <h2>🔋 Accumulators <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age III signature. Bank surplus power, discharge to ride out demand spikes (great with the Auto-Builder).</span></h2>
+      <h2>🔋 Accumulators <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age III signature. Bank surplus power; the stored energy <b>surges production</b> (√ diminishing). Over-build generators to fill the bank. Also rides out deficits.</span></h2>
       <div class="kv"><span>Charge</span><b id="accCharge">0 / 0 MWh</b></div>
       <div class="pwbar" style="margin-top:6px"><div id="accFill"></div></div>
       <div class="toolrow" style="margin-top:10px">
@@ -407,7 +407,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.31.0";
+const VERSION = "0.32.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -721,8 +721,10 @@ const GENERATORS = {
   fusion: {n:"Fusion Reactor", ic:"☢️", power:600, fuel:null,     build:{cr:200000, mult:1.20, bom:{processor:20,robotArm:10,steel:30}}, unlock:{roboticsLab:1}},
 };
 const GORDER = Object.keys(GENERATORS);
-// Age III signature: accumulators bank surplus power and discharge to cover demand spikes.
+// Age III signature: accumulators bank surplus power → the stored energy surges production (+ covers deficits).
 const ACCUMULATOR = {base:6000, mult:1.18, bom:{circuit:15, steel:15}, cap:80};   // MWh stored per unit
+const ACC_BOOST = 0.008;                          // +production per √(MWh banked) — rewards accumulators AND power surplus
+const accBonus = () => ACC_BOOST * Math.sqrt(state.charge||0);
 let lastPower = {supply:BASE_GRID, demand:0, ratio:1};   // updated each sim tick, read by UI
 let buyMode = "1";                                        // "1" | "10" | "max"
 
@@ -785,7 +787,7 @@ function recomputeStats(){
   statCache=s;
 }
 const st = k => statCache[k]||0;
-const globalRate   = () => 1 + st("prod") + fleetBonus();   // fleet's colonization dividend feeds production live
+const globalRate   = () => 1 + st("prod") + fleetBonus() + accBonus();   // fleet + banked accumulator energy feed production live
 const inputEff     = () => Math.max(0.4, 1 - st("input"));
 const rawEff       = () => Math.max(0.2, 1 - st("rawcost"));   // extra reduction on tier-0 (raw) inputs
 const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
@@ -1432,7 +1434,7 @@ function updateUI(){
       const f=el("accFill"); f.style.width=(cap>0?Math.min(100,(state.charge||0)/cap*100):0)+"%"; f.style.background="var(--t3)";
       const ap=planAccumulator(capNum()); const b=el("buildAcc"); b.disabled=ap.n<=0; b.classList.toggle("can",ap.n>0);
       b.innerHTML=`Build Accumulator ×${ap.n>0?ap.n:1}<small>+${ACCUMULATOR.cap*Math.max(1,ap.n)} MWh · ${money(ap.n>0?ap.cost:ap.unit)} · ${bomStr(scaleBOM(ACCUMULATOR.bom,Math.max(1,ap.n)))}</small>`;
-      el("accHint").textContent=`${fmt(state.accumulators||0)} built`;
+      el("accHint").innerHTML=`${fmt(state.accumulators||0)} built · <span class="pos">+${Math.round(accBonus()*100)}% production</span> from banked energy`;
     } }
   // master Auto-Build toggle + Auto-Balance (Age IV)
   const at=el("autoToggle"); at.style.display=autoOn?"":"none";
@@ -1747,6 +1749,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.32.0","Accumulators actually matter now. Instead of a mostly-dormant power buffer, a charged bank now channels its stored energy into your whole factory — a real production boost that scales with how much power you've banked (√ diminishing). So there's finally a reason to over-build generators and stack accumulators: surplus power → full bank → faster production. They still soak up deficits as a safety net too. (Bonus shown live in the 🔋 Accumulators panel.)"],
   ["0.31.0","Auto-Balance is now a true whole-factory auto-pilot — no more chasing bottlenecks. When you turn it on (Age IV), it balances your ENTIRE chain automatically: it builds whichever machine is most starved, keeps the power grid funded, and adds storage when buffers fill — all without you having to flag each machine individually. It self-limits (a product nothing uses stays full, so it's never over-built), so once you flip it on the factory maintains its own ratios and you're free to focus on the tree, prestige, and the endgame. The old per-machine Auto flags still work for finer manual control when Auto-Balance is off."],
   ["0.30.1","Pacing rebalance for the bigger tree. The ages are now spread across the journey instead of all unlocking in the first couple hours: the Blueprints needed to reach the Automation, Robotic, and Space ages went up (to 10 / 80 / 400 earned), so you reach robots and probes around the mid-game, and the 300-node tree + self-replicating fleet carry the long tail. Blueprint yield and the tree itself were left as-is — a beefed-up balance sim showed they're already well-scaled."],
   ["0.30.0","Much bigger Advancement Tree — now 300+ nodes (was ~55). Each of the six arms runs far deeper: long chains of minor nodes, a Nexus notable every few rings, and the keystone moved out to the tip. There's a lot more to path toward across many prestiges, and adjacent arms cross-link at more points so you can weave between them. Your existing tree allocations are preserved (the inner named nodes kept their spots). Node effects/costs are a first pass and will be tuned with playtesting."],
