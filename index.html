@@ -407,7 +407,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.30.1";
+const VERSION = "0.31.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -985,17 +985,26 @@ function autoBuild(){
   if(st("auto")<=0 || !state.autoOn) return;
   let changed=false;
   if(state.autoBalance && (state.maxAge||1)>=4){
-    // Auto-Balance (Age IV): repeatedly buy the flagged machine whose output buffer is emptiest
-    // (i.e. most-demanded downstream), keeping the chain's ratios balanced automatically.
-    for(let i=0;i<25;i++){
+    // Auto-pilot (Age IV): keep the WHOLE factory balanced — no per-machine flagging needed.
+    // 1. Power: fund generators whenever the grid can't keep up (fuel-free preferred).
+    if(lastPower.ratio<0.999){ for(let i=0;i<20;i++){ let bg=null,bs=-1,bpp=null,bbom=null;
+      for(const g of GORDER){ if(!genUnlocked(g)) continue; const p=planGenerator(g,1); if(p.n<=0) continue; const bom=scaleBOM(GENERATORS[g].build.bom,p.n); if(!canAfford(p.cost,bom)) continue;
+        const sc=GENERATORS[g].power*(GENERATORS[g].fuel?1:10); if(sc>bs){ bs=sc; bg=g; bpp=p; bbom=bom; } }
+      if(!bg) break; pay(bpp.cost,bbom); state.generators[bg]+=bpp.n; changed=true; } }
+    // 2. Machines: build whichever UNLOCKED producer's output buffer is emptiest (most-starved downstream).
+    //    Self-limiting: a product nothing consumes stays full, so it's never picked → dead branches aren't over-built.
+    for(let i=0;i<40;i++){
       let best=null,bestFill=Infinity,bestP=null,bestBom=null;
-      for(const k of MORDER){ if(!state.auto[k]||!state.unlocked[k]) continue;
+      for(const k of MORDER){ if(!state.unlocked[k]) continue;
         const p=planMachine(k,1); if(p.n<=0) continue; const bom=scaleBOM(buildBOM(k),p.n); if(!canAfford(p.cost,bom)) continue;
         const out=Object.keys(MACHINES[k].out)[0]; const fill=(state.items[out]||0)/capOf(out);
         if(fill<bestFill){ bestFill=fill; best=k; bestP=p; bestBom=bom; } }
       if(!best) break;
       pay(bestP.cost,bestBom); state.machines[best]+=bestP.n; state.stats.built+=bestP.n; changed=true;
     }
+    // 3. Storage: add a warehouse when any buffer caps, so the faster chain doesn't back up on itself.
+    for(const id in ITEMS){ if(itemUnlocked(id) && (state.items[id]||0)>=capOf(id)-1e-6){
+      const p=planWarehouse(1); if(p.n>0){ const bom=scaleBOM(WAREHOUSE.bom,p.n); if(canAfford(p.cost,bom)){ pay(p.cost,bom); state.warehouses+=p.n; changed=true; } } break; } }
   } else {
     for(const k of MORDER){ if(state.auto[k] && state.unlocked[k]){
       const p=planMachine(k,1); if(p.n>0){ const bom=scaleBOM(buildBOM(k),p.n);
@@ -1430,7 +1439,7 @@ function updateUI(){
   if(autoOn){ at.classList.toggle("can",state.autoOn); at.innerHTML=`🤖 Auto-Build: ${state.autoOn?"ON":"OFF"}`; }
   const abt=el("autoBalanceToggle"), showAB=autoOn && (state.maxAge||1)>=4;
   abt.style.display=showAB?"":"none";
-  if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-buy the most-starved machine to keep ratios balanced (Age IV)"; }
+  if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-pilot (Age IV): keeps your WHOLE factory balanced — builds the most-starved machine, funds power, and adds storage. No per-machine flagging needed."; }
   const oct=el("overclockToggle"), showOC=(state.maxAge||1)>=2;   // Machine-age signature
   oct.style.display=showOC?"":"none";
   if(showOC){ oct.classList.toggle("can",state.overclock); oct.innerHTML=`⚡ Overclock: ${state.overclock?"ON":"OFF"}`;
@@ -1738,6 +1747,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.31.0","Auto-Balance is now a true whole-factory auto-pilot — no more chasing bottlenecks. When you turn it on (Age IV), it balances your ENTIRE chain automatically: it builds whichever machine is most starved, keeps the power grid funded, and adds storage when buffers fill — all without you having to flag each machine individually. It self-limits (a product nothing uses stays full, so it's never over-built), so once you flip it on the factory maintains its own ratios and you're free to focus on the tree, prestige, and the endgame. The old per-machine Auto flags still work for finer manual control when Auto-Balance is off."],
   ["0.30.1","Pacing rebalance for the bigger tree. The ages are now spread across the journey instead of all unlocking in the first couple hours: the Blueprints needed to reach the Automation, Robotic, and Space ages went up (to 10 / 80 / 400 earned), so you reach robots and probes around the mid-game, and the 300-node tree + self-replicating fleet carry the long tail. Blueprint yield and the tree itself were left as-is — a beefed-up balance sim showed they're already well-scaled."],
   ["0.30.0","Much bigger Advancement Tree — now 300+ nodes (was ~55). Each of the six arms runs far deeper: long chains of minor nodes, a Nexus notable every few rings, and the keystone moved out to the tip. There's a lot more to path toward across many prestiges, and adjacent arms cross-link at more points so you can weave between them. Your existing tree allocations are preserved (the inner named nodes kept their spots). Node effects/costs are a first pass and will be tuned with playtesting."],
   ["0.29.2","Resource chips no longer bounce around. The resource ticker is now a fixed grid — every chip is the same size and stays put, so when items are filling, draining, or maxing out, the numbers update in place instead of shoving neighbouring chips around. Much easier to click the right one. (The spare-capacity readout was tightened to fit the fixed width; the fill bar already turns red when full.)"],

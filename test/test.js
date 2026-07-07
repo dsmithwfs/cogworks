@@ -282,6 +282,25 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("auto-balance targets the starved machine", E.state.machines.miner > 0);
   eq("auto-balance skips the full-output machine", E.state.machines.ironFurnace, 0);
 
+  // whole-factory auto-pilot: balances UNLOCKED machines even with NOTHING flagged (no per-machine opt-in)
+  fresh();
+  E.state.allocated["eng_3_s1"] = true; E.recomputeStats();
+  E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
+  E.state.unlocked.miner = true; E.state.auto = {};            // nothing flagged
+  E.state.items.ironOre = 0;                                    // miner's output empty (demanded)
+  E.autoBuild();
+  ok("auto-balance builds UNFLAGGED machines (whole-factory auto-pilot)", E.state.machines.miner > 0);
+
+  // auto-pilot also adds storage when a buffer caps
+  fresh();
+  E.state.allocated["eng_3_s1"] = true; E.recomputeStats();
+  E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
+  E.state.items.brick = 1e4;                                    // warehouse BOM
+  E.state.items.ironOre = E.capOf("ironOre");                   // a buffer is capped
+  const wh0 = E.state.warehouses;
+  E.autoBuild();
+  ok("auto-balance auto-adds storage when a buffer caps", E.state.warehouses > wh0);
+
   // with balance OFF it buys 1 of each flagged instead
   fresh();
   E.state.allocated["eng_3_s1"] = true; E.recomputeStats();

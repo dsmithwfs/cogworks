@@ -487,10 +487,15 @@ to cover the gap, holding the power ratio at 100% until it drains. Value is high
 IV, and it makes fuel-free generators (which do the charging) more valuable. Per-run infrastructure
 (resets on Restructure). Lives in the ⚡ Power tab.
 
-**Phase 2 — Automation Age signature: Auto-Balance.** A toggle (shown once the Auto-Builder is
-unlocked *and* you've reached Age IV) that changes the auto-builder from "buy 1 of each flagged
-machine" to "repeatedly buy the flagged machine whose output buffer is **emptiest**" — i.e. the
-current bottleneck — up to 25 builds/tick. This maintains chain ratios automatically; its bursty
+**Phase 2 — Automation Age signature: Auto-Balance → whole-factory auto-pilot (v0.31.0).** A toggle
+(shown once the Auto-Builder is unlocked *and* you've reached Age IV) that turns the auto-builder into
+a full auto-pilot: it (1) funds generators whenever the grid dips below 100%, (2) repeatedly builds
+whichever **unlocked** producer's output buffer is **emptiest** — the current bottleneck, no per-machine
+flagging needed — up to 40/tick, and (3) auto-adds a Warehouse when any buffer caps. **Self-limiting:**
+a product nothing consumes stays full, so it's never "most starved" → dead branches aren't over-built.
+This is the manual→automated graduation — once on, the chain maintains its own ratios and the player
+focuses on the meta (tree/prestige/ages/fleet), *ending* the late-game "chase the bottleneck" tedium.
+The old per-machine `state.auto[k]` flags still drive the simpler non-balance auto mode. Its bursty
 batch-buys pair with Age III's accumulators (which absorb the demand spikes).
 
 **Phase 2 — Wider chains:** the early ages were a single thread, so parallel + interconnecting
