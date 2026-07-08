@@ -213,6 +213,16 @@ Engineering notable, **Auto-Builder** (14 📐), unlocks the automation system (
 multipliers (`prod, input, cap, sell, build, mkcost, offcap, offeff, bp, power, grid, fuel,
 powerdraw, click, kick, smelt`). Adding tree content is just more data.
 
+**Qualitative nodes (v0.35.0).** Beyond the `+%` minors/notables, `TREE_SPECIALS` injects **build-defining**
+nodes at set outer rings (replacing that ring's generic spine): **SYNERGY** — effects computed *dynamically*
+from game state, not summed statically: `prodPerAge`·maxAge, `prodPerMachine`·(machines/100), `sellPerItem`·
+(unlocked items), `bpPerAge`·maxAge (in `bpFor`), `whProd`·warehouses (all folded live into `globalRate`
+/`marketMult`/`bpFor`). **MECHANIC-CHANGERS** — behavioral flags read in `simulate`: `noBackpressure`
+(machines never throttle on full buffers; overflow discarded — throughput vs waste), `rawFree` (tier-0
+extractors ignore the power ratio). **TRADEOFF** keystones like *Redline* (`{prod:.9, powerdraw:.45}`).
+Plus the existing **unlock** node (Auto-Builder, `{auto:1}`). These give the tree real *choices*, not just
+stacking. (All new keys stay out of the efficiency domain, so the tree/talent split §11 holds.)
+
 **Targeted levers.** Most effects are global, but a few target a *category* to answer a
 specific bottleneck. `smelt` (Industry → **Blast Furnace**, +50%) boosts only the
 metal-smelting machines (Iron/Copper Furnace, Steel Mill, Alloy Furnace, Foundry — tagged
@@ -344,6 +354,61 @@ The endgame layer *above* Blueprints. Unlocks once you've earned **15 Blueprints
 
 ---
 
+## 12a. Ascension — the deepest prestige (🌑 Dark Matter, v0.34.0)
+
+The **4th prestige layer** and the "hundreds of hours" engine. Unlocked by reaching the **Interstellar
+Age** (`ascensionUnlocked = maxAge ≥ 7`). **Ascending** (`ascend()`) is the deepest reset — it wipes the
+factory *and* every layer below it (Blueprints, tree, **Patents**, the **Fleet**) and **re-locks the ages**
+(`stats.bpEarned = 0`). It grants **Dark Matter** = `floor(√(bpEarned_this_era / ASCEND_SCALE(300)))`.
+
+**Distinct from Patents — by design.** Patents/tree/talents are all "+stat"; Ascension must be a *different
+kind* of layer, so Dark Matter buys **META-AUTOMATION** (`DM_AUTO`, not stat upgrades — Ascension adds
+nothing to `st()`). The automations run/reshape the LOWER loops via `metaAuto()` (called each tick):
+**Blueprint Autopilot** (`autoAllocateBP` — greedily allocates the whole 300-node tree, killing the manual
+clicking), **Talent Autopilot** (`autoBuyTalents`), **Genesis Cache** (leveled head-start pre-built into
+`freshRun`), **Auto-Restructure** (fires `restructure()` when a run's `bpFor` peaks — cadence
+`≥1.25×lastBpGain`), **Auto-Patent** (`filePatent()`), **Auto-Ascend** (`ascend()`). The three resets are
+refactored into silent core fns (`restructure`/`filePatent`/`ascend`) that the modals *and* the automations
+both call. `dmCost = cost·(lvl+1)`; most are one-time unlocks (`max:1`), Genesis Cache is leveled (`max:10`).
+**Kept across Ascension:** the age *record* (`maxAge` → permanent +10%/age dividend), mastery, achievements,
+Dark Matter. The loop: climb → ascend → come back with the grind **running itself**, go deeper, repeat.
+**UI:** 🌑 Ascension tab (hidden until unlocked).
+
+### 12a-i. Ascension as the progression SPINE (v0.38.0 rebalance)
+
+A full-game pacing sim (`test/pace.js` — models the whole macro-loop across Ascension *eras*, uses the Fleet
++ signatures, and does a no-restructure "push run") exposed a structural defect: **the game plateaued.** Across
+12 eras `maxAge` never left VI and `prod×` stuck at ~8.6 — eras *repeated* the same ~3.6K BP rather than
+*advancing*, and Ages VII–VIII (and their signatures) sat **above the reachable ceiling**. Root cause: nothing
+meaningful compounded across Ascensions (the dividend caps at `maxAge`, talents crawl), so re-climbs never got
+*higher*, only *faster*. Pure cost-inflation would have deepened the plateau, not fixed it.
+
+The fix makes Dark Matter the **cross-era progression axis** (the roadmap's "DM gates content past Age VII"),
+via two coupled levers — deliberately *not* a "+% shop" (that's still Patents' job):
+
+- **Lifetime `dmEarned`** (`stats.dmEarned`, incremented in `ascend()`, **never spent** — distinct from the
+  spendable `darkMatter` balance). A monotonic record of cosmic mastery. Spending Dark Matter on automations
+  can't set your progression back.
+- **Ascendant Foundation** (`freshRun`) — accumulated `dmEarned` pre-builds a **balanced PYRAMID head-start**
+  (exponentially more of the lower tiers — `topN·2.4^(reach−tier)` up to a mid tier that rises with `√dmEarned`,
+  capped at tier `MAX_AGE−3`). Because each recipe eats several units of the tier below, a *pyramid* is what
+  actually feeds the top — an earlier flat/equal seed **starved** the tier-7 chain (0 processors) and made
+  things *worse*. Now each era starts materially higher → re-climbs *higher* → the plateau becomes a rising
+  staircase (`prod×` climbs 8.5→10.5+ across eras in-sim).
+- **Age VIII is DM-gated** — `AGE_DM = [0,…,0,30]`, checked in `ageUnlocked` alongside `AGE_REQ`. **Only Age
+  VIII** is gated (Age VII stays push-reachable so Ascension isn't deadlocked — you must reach VII once to
+  *unlock* Ascension). Age VIII becomes the destination you accumulate ~10 eras of Dark Matter to reach, not
+  something one run brute-forces. Surfaced in the factory age-banner, the roadmap, and the objective bar.
+
+**Sim result:** with the mature meta a push run now reaches Age VII in ~13 min and **Age VIII in ~1.8h**
+(previously unreachable); the ~10-era climb to the `dmEarned` gate + the ~148-DM automation grind + maxing the
+tree give the long *advancing* arc. **Caveat (unchanged standing risk):** the greedy sim AI can't balance the
+top 8-tier pyramid the way a human / Auto-Balance can, so the exact top-end times need **human playtest** — the
+sim validates *shape and direction* (plateau → staircase), not precise hours. `AGE_DM[8]`, `ASCEND_SCALE`, and
+the Ascendant Foundation scaling are the main dials.
+
+---
+
 ## 13. Systems
 
 - **Tick:** 100 ms, real wall-clock delta (clamped 5 s/tick; big gaps → offline calc).
@@ -429,6 +494,15 @@ the Factory tab, with an **age banner** up top.
 | IV · Automation | Complex Assemblies | the Auto-Builder + **Auto-Balance** (Phase 2) |
 | V · Robotic | Robotics | **Workforce** — deploy Robots as workers (Phase 2) |
 | VI · Space | Singularity Tech | **Von Neumann Fleet** — launch Probes → a self-replicating idle engine (+ infinite Patents) |
+| VII · Interstellar | Interstellar Tech | Star Scoop → Hydrogen → **Antimatter** → **Dyson Panels**; signature **Dyson Swarm** — deploy panels → permanent free grid power (× generator tech) |
+| VIII · Transcendence | Transcendence Tech | Quantum Fab → Matrioshka → Reality Compiler; signature **Reality Forking** — spend Reality Shards to fork the whole factory into parallel timelines (× all output), each fork power-hungry (fed by the Dyson Swarm) |
+
+*(v0.33.0: the age system is generalized — `MAX_AGE`/`ALL_AGES` derive from the `AGES` array, so adding
+an age is now pure data: extend `TIERS`/`TIER_AGE`/`TIER_MULT`/`DRAW`/`AGES`/`ROMAN`/`AGE_GOALS`/`AGE_REQ`
+/`AGE_SIG` + new items/machines. **Ages VII–VIII are the "Cosmic Expansion" roadmap** — cosmic scaling
+blending into dimensional/digital at the top, a new **Ascension** prestige layer above Patents for the
+infinite runway, and a **qualitative tree pass** — targeting hundreds of hours. Gates: Age VII = 1,200 BP,
+Age VIII = 2,800 BP; `TIER_MULT[7] = 1.60`, `TIER_MULT[8] = 1.65`.)*
 
 - **`currentAge`** = the highest age you've built a machine in this run; **`maxAge`** = the
   highest ever reached (latched, persists through Restructure *and* File Patent).
@@ -449,6 +523,35 @@ raises the cap → always a reason to keep building them (endless, but governed 
 grants a permanent, **log-diminishing production boost** `fleetBonus = FLEET_MULT·log10(1+fleet)` folded
 live into `globalRate()`. This is the payoff for finishing the ~30h climb: an idle engine that compounds
 across every future run. Numbers stay sane via the cap + log benefit. *(All six ages now have a signature.)*
+
+**Phase 3 — Interstellar-Age signature: the Dyson Swarm (v0.36.0).** Deploy `dysonPanel` items into a
+**per-run** swarm (`deployDyson`; resets on Restructure like the other structural signatures). Each panel
+permanently feeds the grid `DYSON_MW` (400) of **free power**, scaled by generator tech —
+`dysonPower = dysonSwarm·DYSON_MW·genMult()`, added straight into `computePower`'s `free` supply. This is the
+deliberate answer to the escalating late-game **power draw** (tier-8 machines pull `DRAW=20` MW each): instead
+of stacking ever more generators + coal, you sink your Dyson Panel output into the swarm and the star powers
+the factory. Panels are contested — they're also the Age VII goal item and the input to the Age VIII chain —
+so deploying is a real allocation choice, not a free button (the signature template).
+
+**Phase 3 — Transcendence Age (VIII, v0.36.0).** The chain stops *mining* reality and starts *computing* it:
+**Quantum Fab** (Dyson Panel + Processor → Qubit) → **Matrioshka Node** (Qubit + Antimatter → Simulated Matter)
+→ **Reality Compiler** (Simulated Matter + AI Core → Reality Shard). It reuses cosmic outputs (Antimatter, AI
+Core) as inputs, so the whole tech tree stays load-bearing. Gated deep at `AGE_REQ[8] = 2,800` BP earned, with
+the steepest cost scaling in the game (`TIER_MULT[8] = 1.65`); goal = 50 Reality Shards.
+
+**Phase 3 — Transcendence-Age signature: Reality Forking (v0.37.0).** The culmination lever. Spend
+`realityShard` items to **open Forks** (`openFork`; per-run, `state.forks`, collapses on Restructure): each fork
+is a parallel branch of the *whole* factory, so `forkMult = 1 + forks·FORK_GAIN` (0.4) is folded as an **outer
+multiplier into `globalRate()`** — it scales **all** production at once, on top of every additive tree/age/fleet
+term. The cost is **doubly-resourced**, which is what keeps it a lever and not a runaway: (1) opening the k-th
+fork costs `FORK_SHARD·k` (2·k) Reality Shards — the slowest currency in the game, so acquisition is rate-limited;
+(2) every fork draws escalating grid power `forkDraw = FORK_MW·f(f+1)/2` (300·triangular), added to `computePower`
+demand exactly like `workforceDraw` — so **linear benefit vs quadratic power cost guarantees self-limitation**, and
+the ceiling is literally "how big is your Dyson Swarm." This deliberately **interlocks Age VII → VIII**: the Dyson
+Swarm's free power is what you spend to fork reality. Over-fork past your power and the whole grid browns out (the
+same brownout mechanic as the Workforce). `collapseForks` frees power in an emergency but never refunds spent
+shards — you can't cleanly un-fork reality. It's the endgame's active knob: *grow the swarm + shard output → fork
+harder → multiply everything*, a compounding top-level loop that gives Reality Shards a purpose beyond the age goal.
 
 **Phase 2 — Machine-Age signature: Overclock (v0.27.0).** A toggle (shown once `maxAge ≥ 2`) that runs
 **every machine ×`OC_SPEED` (1.5) throughput** while multiplying **input consumed per cycle by `OC_INPUT`

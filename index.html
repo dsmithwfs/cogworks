@@ -219,6 +219,7 @@
   <button data-tab="tree">🌳 Advancements</button>
   <button data-tab="talents">🎯 Talents</button>
   <button data-tab="patents">⚛ Patents</button>
+  <button data-tab="ascension" id="tabAscension" style="display:none">🌑 Ascension</button>
   <button data-tab="stats">📊 Stats</button>
 </nav>
 
@@ -272,6 +273,34 @@
         <button class="b mk" id="launch10" style="max-width:100px">Launch 10</button>
         <button class="b mk" id="launchMax" style="max-width:120px">Launch Max</button>
         <span class="muted" style="font-size:12px" id="fleetHint"></span>
+      </div>
+    </div>
+
+    <div class="panel" id="dysonPanel" style="display:none">
+      <h2>🔆 Dyson Swarm <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age VII signature. Deploy Dyson Panels into a swarm around the star. Each panel permanently feeds the grid enormous free power (scaled by generator tech) — the answer to late-game power demand.</span></h2>
+      <div class="toolrow">
+        <span class="kv" style="min-width:150px">Panels in swarm <b id="dysonSize" style="margin-left:6px">0</b></span>
+        <span class="kv" style="min-width:170px">Grid power <b id="dysonMW" style="margin-left:6px">0 MW</b></span>
+      </div>
+      <div class="toolrow" style="margin-top:6px">
+        <button class="b mk" id="dyson1" style="max-width:100px">Deploy 1</button>
+        <button class="b mk" id="dyson10" style="max-width:100px">Deploy 10</button>
+        <button class="b mk" id="dysonMax" style="max-width:120px">Deploy Max</button>
+        <span class="muted" style="font-size:12px" id="dysonHint"></span>
+      </div>
+    </div>
+
+    <div class="panel" id="forkPanel" style="display:none">
+      <h2>🌀 Reality Forking <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age VIII signature. Spend Reality Shards to fork your whole factory into parallel timelines that all produce at once (a multiplier on ALL output). Each parallel reality is ferociously power-hungry, and the draw escalates per fork — feed them from your Dyson Swarm, or the grid browns out.</span></h2>
+      <div class="toolrow">
+        <span class="kv" style="min-width:150px">Forks <b id="forkCount" style="margin-left:6px">0</b></span>
+        <span class="kv" style="min-width:160px">Production <b id="forkMultTxt" style="margin-left:6px">×1.00</b></span>
+        <span class="kv" style="min-width:150px">Power draw <b id="forkPower" style="margin-left:6px">0 MW</b></span>
+      </div>
+      <div class="toolrow" style="margin-top:6px">
+        <button class="b mk" id="forkOpen" style="max-width:160px">Fork Reality</button>
+        <button class="b" id="forkCollapse" style="max-width:130px">Collapse All</button>
+        <span class="muted" style="font-size:12px" id="forkHint"></span>
       </div>
     </div>
 
@@ -374,6 +403,16 @@
     </div>
   </section>
 
+  <section class="tabpane" id="tab-ascension">
+    <div class="panel">
+      <h2>🌑 Ascension
+        <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">— the deepest prestige. Collapse everything for Dark Matter; its upgrades are permanent and make each new climb faster.</span>
+        <span class="num" id="dmCount" style="margin-left:auto;color:#b98cff;font-size:15px;font-weight:700"></span>
+      </h2>
+      <div id="ascensionBody"></div>
+    </div>
+  </section>
+
   <section class="tabpane" id="tab-stats">
     <div class="panel">
       <h2>📊 Statistics</h2>
@@ -407,7 +446,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.32.0";
+const VERSION = "0.38.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -415,14 +454,14 @@ const PRESTIGE_SCALE = 1e4;
    DATA — items, machines, research. Everything is data-driven; "longer" is
    just more entries. Sim & UI are generic.
    ========================================================================= */
-const TIERS = ["Extraction","Smelting & Refining","Basic Components","Advanced Components","Complex Assemblies","Robotics","Singularity Tech"];
+const TIERS = ["Extraction","Smelting & Refining","Basic Components","Advanced Components","Complex Assemblies","Robotics","Singularity Tech","Interstellar Tech","Transcendence Tech"];
 // Ages are the macro-journey: each groups a slice of the chain. Reaching a NEW age (ever) grants
 // a permanent bonus; after a Restructure you re-climb the ages fast — faster each run.
-const TIER_AGE = [1,1,2,3,4,5,6];                   // which age each tier belongs to
+const TIER_AGE = [1,1,2,3,4,5,6,7,8];               // which age each tier belongs to
 // Per-copy build-cost scaling by tier. Low tiers stay spammy-cheap; high tiers scale HARD so a single
 // run walls out and can't brute-force the endgame — prestige multipliers/discounts are the way through.
-const TIER_MULT = [1.15, 1.16, 1.19, 1.23, 1.30, 1.42, 1.55];
-const ROMAN = ["","I","II","III","IV","V","VI"];
+const TIER_MULT = [1.15, 1.16, 1.19, 1.23, 1.30, 1.42, 1.55, 1.60, 1.65];
+const ROMAN = ["","I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"];
 const AGES = [ null,
   {n:"Stone & Iron Age", ic:"⛏️", tagline:"Mine ore and smelt your first plates."},
   {n:"Machine Age",      ic:"⚙️", tagline:"Gears, wire & steel — machines built from parts."},
@@ -430,7 +469,11 @@ const AGES = [ null,
   {n:"Automation Age",   ic:"🛠️", tagline:"Mechanisms, processors & the Auto-Builder."},
   {n:"Robotic Age",      ic:"🤖", tagline:"Robot arms and full robots."},
   {n:"Space Age",        ic:"🛰️", tagline:"AI cores, Von Neumann probes & beyond."},
+  {n:"Interstellar Age", ic:"🌌", tagline:"Scoop stars for antimatter; build a Dyson swarm."},
+  {n:"Transcendence Age",ic:"🌀", tagline:"Compute matter into being; fork reality itself."},
 ];
+const MAX_AGE = AGES.length - 1;                    // highest age (generalized — no more hardcoded 6)
+const ALL_AGES = Array.from({length:MAX_AGE}, (_,i)=>i+1);   // [1..MAX_AGE]
 function currentAge(){ let a=1; for(const k of MORDER){ if((state.machines[k]||0)>0) a=Math.max(a, TIER_AGE[MACHINES[k].t]); } return a; }
 // One headline goal per age (cumulative production of its key product) → a permanent age-themed reward.
 const AGE_GOALS = [ null,
@@ -440,12 +483,15 @@ const AGE_GOALS = [ null,
   {item:"mechanism", n:1000, eff:{prod:.25}, desc:"Assemble 1,000 Mechanisms"},
   {item:"robot",     n:200,  eff:{prod:.30}, desc:"Build 200 Robots"},
   {item:"probe",     n:20,   eff:{bp:.5},    desc:"Launch 20 Von Neumann Probes"},
+  {item:"dysonPanel",n:100,  eff:{prod:.5},  desc:"Assemble 100 Dyson Panels"},
+  {item:"realityShard",n:50, eff:{prodPerAge:.05}, desc:"Compile 50 Reality Shards"},
 ];
 // Hard age-gate: an age's machines stay LOCKED until you've earned this many 📐 Blueprints TOTAL
 // (a permanent, prestige-only metric). Ages I–III are free; IV+ require Restructuring to advance —
 // this is what makes prestige mandatory. Already-built machines are never re-locked. (index = age)
-const AGE_REQ = [0, 0, 0, 0, 10, 80, 400];   // total Blueprints earned to unlock each age (v0.30.0: spread ages across the journey)
-const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet"];  // per-age signature label (for the roadmap)
+const AGE_REQ = [0, 0, 0, 0, 10, 80, 400, 1200, 2800];   // total Blueprints earned to unlock each age (v0.30.0: spread ages across the journey)
+const AGE_DM  = [0, 0, 0, 0, 0, 0, 0, 0, 30];            // LIFETIME Dark Matter earned to unlock each age — only Age VIII is DM-gated (the cross-era progression destination; Age VII stays push-reachable so Ascension isn't deadlocked)
+const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet", "🔆 Dyson Swarm", "🌀 Reality Forking"];  // per-age signature label (for the roadmap)
 
 // id: [name, icon, tier, storageCap, sellValue]
 const ITEMS = {
@@ -473,6 +519,12 @@ const ITEMS = {
   robot:      {n:"Robot",        ic:"🤖", t:5, cap:60,  sell:400},
   aiCore:     {n:"AI Core",      ic:"🧠", t:6, cap:40,  sell:900},
   probe:      {n:"Von Neumann Probe", ic:"🛰️", t:6, cap:25, sell:2500},
+  hydrogen:   {n:"Hydrogen",      ic:"🫧", t:0, cap:600, sell:2},
+  antimatter: {n:"Antimatter",    ic:"✴️", t:7, cap:60,  sell:600},
+  dysonPanel: {n:"Dyson Panel",   ic:"🔆", t:7, cap:40,  sell:2000},
+  qubit:      {n:"Qubit",         ic:"💠", t:8, cap:60,  sell:1500},
+  simMatter:  {n:"Simulated Matter",ic:"🪐",t:8, cap:40,  sell:5000},
+  realityShard:{n:"Reality Shard",ic:"🔮", t:8, cap:30,  sell:12000},
 };
 
 // Machines. build.cr = base credit cost (scales ×1.15/owned). build.bom = flat component cost per build.
@@ -510,6 +562,14 @@ const MACHINES = {
   robotAssembler:{n:"Robot Assembler",ic:"🤖", t:5, rate:1, build:{cr:200000,bom:{robotArm:10,processor:10,mechanism:20}}, in:{robotArm:1,processor:1,mechanism:1}, out:{robot:1}, mkItem:"processor", unlock:{roboticsLab:1}},
   aiFoundry:  {n:"AI Foundry",     ic:"🧠", t:6, rate:1, build:{cr:700000,bom:{processor:30,robotArm:15,circuit:50}},  in:{processor:2,robotArm:1},   out:{aiCore:1}, mkItem:"aiCore",   unlock:{robotAssembler:1}},
   probeAssembler:{n:"Probe Assembler",ic:"🛰️", t:6, rate:1, build:{cr:3000000,bom:{aiCore:15,robot:15,steel:80}},    in:{aiCore:1,robot:1,steel:2},  out:{probe:1}, mkItem:"aiCore",   unlock:{aiFoundry:1}},
+
+  starScoop:        {n:"Star Scoop",        ic:"🌠", t:0, rate:1, build:{cr:5e6,bom:{steel:40,processor:10}},               in:{},                          out:{hydrogen:1},   mkItem:"aiCore", unlock:{probeAssembler:1}},
+  antimatterReactor:{n:"Antimatter Reactor",ic:"✴️", t:7, rate:1, build:{cr:2e7,bom:{aiCore:10,processor:30,steel:60}},      in:{hydrogen:3,processor:1},    out:{antimatter:1}, mkItem:"aiCore", unlock:{starScoop:1}},
+  dysonFoundry:     {n:"Dyson Foundry",     ic:"🔆", t:7, rate:1, build:{cr:5e7,bom:{antimatter:5,steel:80,circuit:60}},     in:{antimatter:1,steel:5,circuit:5}, out:{dysonPanel:1}, mkItem:"aiCore", unlock:{antimatterReactor:1}},
+
+  quantumFab:       {n:"Quantum Fab",       ic:"💠", t:8, rate:1, build:{cr:3e8,bom:{dysonPanel:20,processor:60,aiCore:15}},   in:{dysonPanel:1,processor:3},  out:{qubit:1},        mkItem:"realityShard", unlock:{dysonFoundry:1}},
+  matrioshka:       {n:"Matrioshka Node",   ic:"🪐", t:8, rate:1, build:{cr:1e9,bom:{qubit:30,antimatter:20,dysonPanel:40}}, in:{qubit:2,antimatter:1},      out:{simMatter:1},    mkItem:"realityShard", unlock:{quantumFab:1}},
+  realityCompiler:  {n:"Reality Compiler",  ic:"🔮", t:8, rate:1, build:{cr:5e9,bom:{simMatter:15,qubit:40,aiCore:30}},       in:{simMatter:1,aiCore:1},      out:{realityShard:1}, mkItem:"realityShard", unlock:{matrioshka:1}},
 };
 const MORDER = Object.keys(MACHINES);          // already in raw->finished order
 const START_MACHINES = ["miner","coalDrill","ironFurnace"];
@@ -583,16 +643,29 @@ const ARM_GEN = {
   eng:{title:"Engineering", prim:{k:"prod", v:0.05, label:"global production"},        sec:{k:"click", v:2,    label:"ore per click", flat:true}},
   asc:{title:"Ascendancy",  prim:{k:"bp",   v:0.06, label:"Blueprints / Restructure"}, sec:{k:"offeff",v:0.04, label:"offline rate"}},
 };
+// Qualitative "special" tree nodes (NOT just +%) injected at specific outer rings, replacing that ring's
+// generic spine. Covers: SYNERGY (scale with game state), MECHANIC-changers (alter the rules), TRADEOFFS.
+const TREE_SPECIALS = {
+  ind: { 8:  N("Economies of Scale","+2% production per 100 machines you've built",{prodPerMachine:.02},28),
+         12: N("Redline","+90% production — but +45% power demand",{prod:.9,powerdraw:.45},48),
+         16: N("Frictionless Chains","Machines never backpressure — they run full-speed even into full buffers (overflow is discarded)",{noBackpressure:1},80) },
+  log: { 12: N("Vertical Integration","Each Warehouse also gives +1.5% production",{whProd:.015},40) },
+  pow: { 11: N("Autonomous Mining","Raw extractors (miners, drills, quarries) ignore the power grid entirely",{rawFree:1},45) },
+  com: { 12: N("Diversified Portfolio","+3% sale value per unlocked item type",{sellPerItem:.03},40) },
+  eng: { 8:  N("Ancestral Knowledge","+5% production per age you've reached",{prodPerAge:.05},28) },
+  asc: { 12: N("Compound Interest","+4% Blueprints per Restructure per age reached",{bpPerAge:.04},44) },
+};
 function genNode(stat, mult, cost, notable, g, ri, tag){
   const v = stat.flat ? Math.round(stat.v*mult) : +(stat.v*mult).toFixed(3);
   const desc = stat.flat ? `+${v} ${stat.label}` : `+${Math.round(v*100)}% ${stat.label}`;
   const name = notable ? `${g.title} Nexus` : `${g.title} ${ri}${tag||''}`;
   return (notable?N:M)(name, desc, {[stat.k]: v}, cost);
 }
-function genRing(g, ri){
+function genRing(g, ri, armKey){
   const cost = 4 + Math.round(Math.pow(ri, 1.35));    // escalating cost outward
   const notable = ri % 4 === 0;
-  const spine = genNode(g.prim, notable?4:1, notable?cost*2:cost, notable, g, ri);
+  const special = TREE_SPECIALS[armKey] && TREE_SPECIALS[armKey][ri];   // qualitative node replaces the generic spine
+  const spine = special || genNode(g.prim, notable?4:1, notable?cost*2:cost, notable, g, ri);
   const side = [ genNode(g.prim, 1, cost, false, g, ri, "a"), genNode(g.sec, 1, cost, false, g, ri, "b") ];
   return {spine, side};
 }
@@ -600,7 +673,7 @@ function buildArms(){
   return ARMS_SRC.map(arm=>{
     const g = ARM_GEN[arm.key], rings=[]; let keystone=null;
     arm.rings.forEach(r=>{ if(r.spine.type==="keystone") keystone=r.spine; else rings.push(r); });   // keep inner, pull keystone
-    for(let ri=rings.length+1; ri<TREE_DEPTH; ri++) rings.push(genRing(g, ri));                       // extend with generated rings
+    for(let ri=rings.length+1; ri<TREE_DEPTH; ri++) rings.push(genRing(g, ri, arm.key));              // extend with generated rings
     rings.push({spine: Object.assign({}, keystone, {cost: Math.max(keystone.cost*2, 90)})});          // keystone at the tip (pricier)
     return {key:arm.key, angle:arm.angle, rings};
   });
@@ -706,6 +779,26 @@ const patentCost = (p,lvl) => p.base * (lvl+1);
 const patentAvailable = () => Math.floor(Math.sqrt((state.bpCycle||0)/PATENT_SCALE));
 const patentsUnlocked = () => (state.stats.bpEarned||0) >= PATENT_UNLOCK || (state.patents||0) > 0;
 
+// ---- Ascension: the deepest (4th) prestige layer — the "hundreds of hours" engine -----------
+// Unlocked by reaching the Interstellar Age. Ascending collapses everything below it (factory, BP,
+// tree, Patents, Fleet) and RE-LOCKS the ages, granting 🌑 Dark Matter based on Blueprints earned this
+// era. Distinct from Patents: Dark Matter doesn't buy +% — it buys AUTOMATION that runs & reshapes the
+// LOWER prestige loops for you, so the shallow game plays itself while you operate at cosmic scale.
+const DM_AUTO = [
+  {id:"bpAuto",    name:"Blueprint Autopilot", ic:"🌳", cost:1,  max:1,  desc:"Auto-allocate earned Blueprints into the best tree nodes — no more clicking 300 nodes"},
+  {id:"talAuto",   name:"Talent Autopilot",    ic:"🎯", cost:1,  max:1,  desc:"Auto-spend Talent Points as you earn them"},
+  {id:"headStart", name:"Genesis Cache",       ic:"📦", cost:2,  max:10, desc:"Every reset begins pre-seeded with machines & Credits (bigger per level) — faster re-climbs"},
+  {id:"autoRes",   name:"Auto-Restructure",    ic:"♻", cost:3,  max:1,  desc:"Automatically Restructure once a run's Blueprint yield peaks"},
+  {id:"autoPat",   name:"Auto-Patent",         ic:"⚛", cost:8,  max:1,  desc:"Automatically File a Patent whenever it would grant one"},
+  {id:"autoAsc",   name:"Auto-Ascend",         ic:"🌑", cost:25, max:1,  desc:"Automatically Ascend whenever it would grant Dark Matter — the loop runs itself"},
+];
+const ASCEND_UNLOCK_AGE = 7;                       // reach the Interstellar Age to unlock Ascension
+const ASCEND_SCALE = 300;                          // Blueprints-earned-this-era per √ Dark Matter
+const dmCost = (u,lvl) => u.cost * (lvl+1);
+const dmHas = id => (state.dmUpg[id]||0) > 0;
+const darkMatterAvailable = () => Math.floor(Math.sqrt((state.stats.bpEarned||0) / ASCEND_SCALE));
+const ascensionUnlocked = () => (state.maxAge||1) >= ASCEND_UNLOCK_AGE || (state.darkMatter||0) > 0 || (state.ascensions||0) > 0;
+
 const WAREHOUSE = {base:500, mult:1.15, bom:{brick:10}};
 const MARKET = {base:2000, mult:1.18, bom:{ironPlate:10,gear:10}, rate:2}; // sells 2 items/s/terminal at Mk0
 const MARKET_OVERSTOCK = "__overstock__";          // sentinel marketItem: auto-sell surplus instead of one resource
@@ -714,7 +807,7 @@ const OVERSTOCK_KEEP = 0.9;                         // overstock mode leaves thi
 // Power — a cross-cutting constraint. Machines draw power (by tier, scaled by Mk);
 // generators supply it. Under-supply throttles the WHOLE factory proportionally.
 const BASE_GRID = 200;                             // free MW — covers early/mid game; power bites once you scale big
-const DRAW = [1, 1, 2, 3, 5, 8, 12];               // MW per machine, indexed by machine tier
+const DRAW = [1, 1, 2, 3, 5, 8, 12, 16, 20];       // MW per machine, indexed by machine tier
 const GENERATORS = {
   steam:  {n:"Steam Engine",   ic:"💨", power:25,  fuel:{coal:1}, build:{cr:500,    mult:1.18, bom:{ironPlate:20,gear:10}},          unlock:{gearPress:1}},
   solar:  {n:"Solar Panel",    ic:"☀️", power:20,  fuel:null,     build:{cr:8000,   mult:1.16, bom:{steel:20,circuit:15}}, unlock:{circuitFab:1}},
@@ -747,15 +840,32 @@ function freshRun(s){
   s.deployed = 0;                                   // Robotic-age workforce (per-run)
   s.accumulators = 0; s.charge = 0;                 // Industrial-age power buffer (per-run)
   s.prospect = 0; s.veinLeft = 0;                   // Stone-age Prospecting: charge → Rich Vein surge (per-run)
+  s.dysonSwarm = 0;                                 // Interstellar-age Dyson Swarm: deployed panels add grid power (per-run)
+  s.forks = 0;                                      // Transcendence-age Reality Forking: parallel factory branches (per-run)
   let ks=0; for(const id in (s.allocated||{})){ const n=NODES[id]; if(n && n.eff.kick) ks+=n.eff.kick; }
   if(ks>0){ s.warehouses+=ks; s.machines.miner+=3*ks; s.machines.ironFurnace+=2*ks; s.credits+=500*ks; }
+  const hs=(s.dmUpg&&s.dmUpg.headStart)||0;   // Ascension "Genesis Cache" — pre-seed each reset for faster re-climbs
+  if(hs>0){ s.credits+=2000*hs; s.machines.miner+=8*hs; s.machines.coalDrill+=5*hs; s.machines.ironFurnace+=5*hs; s.machines.gearPress+=3*hs; }
+  // Ascendant Foundation — accumulated LIFETIME Dark Matter carries a head-start forward that GROWS every era, so
+  // you re-climb HIGHER over time (the cross-era progression engine that makes the top ages reachable). Seeds a
+  // balanced PYRAMID of the chain (exponentially more of the lower tiers, since each recipe eats several units of
+  // the tier below) up to a tech tier that rises with dmEarned → you bootstrap into the mid-game and spend the run
+  // pushing the TOP ages, instead of rebuilding all 8 tiers from scratch. Capped at a mid tier so it never trivialises.
+  const dme=(s.stats&&s.stats.dmEarned)||0;
+  if(dme>0){
+    const reach=Math.min(MAX_AGE-3, 2+Math.floor(Math.sqrt(dme)/2));  // highest tier the head-start pre-builds (caps at tier 5)
+    const topN=Math.max(2, Math.round(2+dme*0.35));                    // count at the highest seeded tier (grows with DM)
+    for(const key of MORDER){ const t=MACHINES[key].t; if(t<=reach) s.machines[key]=(s.machines[key]||0)+Math.round(topN*Math.pow(2.4, reach-t)); }
+    s.credits+=50000*dme;
+  }
 }
 function defaultState(){
   const s = {version:VERSION, lastSaved:Date.now(), blueprints:0, lifetimeCredits:0, prestiges:0,
-    allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}},
+    allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}, dmEarned:0},
     auto:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
-    fleet:0, launched:0};   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
+    fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
+    darkMatter:0, dmUpg:{}, ascensions:0};   // Ascension layer (4th prestige): cosmic currency + permanent upgrades
   freshRun(s);
   return s;
 }
@@ -779,7 +889,7 @@ function recomputeStats(){
   for(const id in state.allocated){ if(!state.allocated[id]) continue; const n=NODES[id]; if(!n) continue;
     for(const k in n.eff) s[k]=(s[k]||0)+n.eff[k]; }
   for(const m of MILESTONES){ if(state.milestones[m.id]) for(const k in m.eff) s[k]=(s[k]||0)+m.eff[k]; }
-  for(let a=1;a<=6;a++){ if(state.ageGoals[a]){ const e=AGE_GOALS[a].eff; for(const k in e) s[k]=(s[k]||0)+e[k]; } }
+  for(let a=1;a<=MAX_AGE;a++){ if(state.ageGoals[a]){ const e=AGE_GOALS[a].eff; for(const k in e) s[k]=(s[k]||0)+e[k]; } }
   for(const t of TALENTS){ const r=state.talents[t.id]||0; if(r>0) for(const k in t.per) s[k]=(s[k]||0)+t.per[k]*r; }
   for(const p of PATENTS){ const l=state.patentUpg[p.id]||0; if(l>0) for(const k in p.per) s[k]=(s[k]||0)+p.per[k]*l; }
   const agesBeyond=Math.max(0,(state.maxAge||1)-1); if(agesBeyond>0) s.prod=(s.prod||0)+0.10*agesBeyond; // permanent per-age dividend
@@ -787,11 +897,17 @@ function recomputeStats(){
   statCache=s;
 }
 const st = k => statCache[k]||0;
-const globalRate   = () => 1 + st("prod") + fleetBonus() + accBonus();   // fleet + banked accumulator energy feed production live
+const totalMachines    = () => { let n=0; for(const k in state.machines) n+=state.machines[k]||0; return n; };
+const unlockedItemCount= () => { let n=0; for(const id in ITEMS) if(itemUnlocked(id)) n++; return n; };
+const globalRate   = () => (1 + st("prod") + fleetBonus() + accBonus()
+  + st("prodPerAge")*(state.maxAge||1)              // SYNERGY node: +production per age reached
+  + st("prodPerMachine")*(totalMachines()/100)      // SYNERGY node: +production per 100 machines
+  + st("whProd")*(state.warehouses||0))             // MECHANIC node: warehouses also boost production
+  * forkMult();                                     // Reality Forking (Age VIII signature): parallel branches multiply ALL output
 const inputEff     = () => Math.max(0.4, 1 - st("input"));
 const rawEff       = () => Math.max(0.2, 1 - st("rawcost"));   // extra reduction on tier-0 (raw) inputs
 const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
-const marketMult   = () => 1 + st("sell");
+const marketMult   = () => 1 + st("sell") + st("sellPerItem")*unlockedItemCount();   // SYNERGY node: +sale value per unlocked item
 const buildDiscount= () => Math.max(0.4, 1 - st("build"));
 const mkDiscount   = () => Math.max(0.4, 1 - st("mkcost"));
 const offlineEff   = () => Math.min(1, 0.5 + st("offeff"));
@@ -812,7 +928,7 @@ const fleetCap   = () => (state.launched||0) * FLEET_CAP_MULT;
 const fleetBonus = () => FLEET_MULT * Math.log10(1 + (state.fleet||0));   // +production (colonies send back resources)
 const capOf        = id => Math.floor(ITEMS[id].cap * capMult());
 const mkMult       = id => 1 + 0.5*(state.mk[id]||0);
-const bpFor        = rc => Math.floor(Math.pow(Math.max(0,rc)/PRESTIGE_SCALE, 0.6) * (1 + st("bp")));
+const bpFor        = rc => Math.floor(Math.pow(Math.max(0,rc)/PRESTIGE_SCALE, 0.6) * (1 + st("bp") + st("bpPerAge")*(state.maxAge||1)));   // +bpPerAge: SYNERGY node
 const genMult      = () => 1 + st("power");        // generator output multiplier
 const gridBase     = () => BASE_GRID + st("grid"); // free MW
 const fuelMult     = () => Math.max(0.25, 1 - st("fuel"));
@@ -821,6 +937,21 @@ const smeltMult    = () => 1 + st("smelt");        // smelter-only output bonus 
 const workforceBonus = () => Math.sqrt(state.deployed||0) * 0.05;   // Robotic-age: √deployed × 5% production
 const WORKFORCE_MW   = 0.5;                         // grid upkeep per deployed robot — big workforces need real power
 const workforceDraw  = () => (state.deployed||0) * WORKFORCE_MW;    // linear cost vs √ benefit → self-limiting
+// Interstellar-age signature — the Dyson Swarm. Deploy Dyson Panels (consumed permanently) into a swarm ringing the
+// star; each panel feeds the grid huge free power, scaled by generator tech. Answers the escalating late-game power draw.
+const DYSON_MW       = 400;                          // grid power added per deployed Dyson Panel (× genMult)
+const dysonPower     = () => (state.dysonSwarm||0) * DYSON_MW * genMult();
+// Transcendence-age signature — Reality Forking. Spend Reality Shards to open Forks: parallel branches of the WHOLE
+// factory that all run at once → a multiplicative boost to ALL production (folded into globalRate). But every parallel
+// reality is ferociously power-hungry, and the draw ESCALATES per fork (the k-th fork draws FORK_MW×k), so forks must
+// be fed from your Dyson Swarm — over-fork and the grid browns out everything. Doubly-resourced (Shards to open, power
+// to run) and guaranteed self-limiting (quadratic power cost vs linear benefit). Per-run — collapses on Restructure.
+const FORK_GAIN  = 0.4;                               // +40% total production per active fork (multiplicative, outer)
+const FORK_MW    = 300;                               // the k-th fork draws FORK_MW×k grid power → triangular total
+const FORK_SHARD = 2;                                 // the k-th fork costs FORK_SHARD×k Reality Shards to open
+const forkMult   = () => 1 + (state.forks||0) * FORK_GAIN;
+const forkDraw   = () => { const f=state.forks||0; return FORK_MW * f*(f+1)/2; };   // total MW to sustain every fork
+const forkCost   = () => FORK_SHARD * ((state.forks||0)+1);                          // Reality Shards for the NEXT fork
 
 /* =========================================================================
    COSTS
@@ -863,7 +994,7 @@ function pay(cr, bom){ state.credits-=cr; for(const r in (bom||{})) state.items[
 /* =========================================================================
    UNLOCKS (progressive tech path)
    ========================================================================= */
-const ageUnlocked = age => (state.stats.bpEarned||0) >= AGE_REQ[age];   // prestige-gated: earn Blueprints to advance
+const ageUnlocked = age => (state.stats.bpEarned||0) >= AGE_REQ[age] && (state.stats.dmEarned||0) >= (AGE_DM[age]||0);   // Blueprint-gated + (top age) Dark-Matter-gated for cross-era progression
 function machineUnlocked(key){
   if(state.unlocked[key]) return true;
   if(!ageUnlocked(TIER_AGE[MACHINES[key].t])) return false;   // hard age-gate (must prestige)
@@ -908,11 +1039,13 @@ function computePower(dt){
   const gm = genMult();
   let free = gridBase()
     + (state.generators.solar||0)  * GENERATORS.solar.power  * gm
-    + (state.generators.fusion||0) * GENERATORS.fusion.power * gm;
+    + (state.generators.fusion||0) * GENERATORS.fusion.power * gm
+    + dysonPower();                                   // Dyson Swarm feeds the grid (Age VII signature)
   let demand = 0;
   for(const key of MORDER){ const c=state.machines[key]||0; if(c>0) demand += DRAW[MACHINES[key].t]*c*mkMult(key); }
   demand *= demandMult();
   demand += workforceDraw();                          // deployed robots draw grid power (Age V workforce upkeep)
+  demand += forkDraw();                               // parallel realities are power-hungry (Age VIII Reality Forking upkeep)
   const steamCap = (state.generators.steam||0) * GENERATORS.steam.power * gm;
   const wantPower = Math.min(steamCap, Math.max(0, demand - free));
   const coalPerMW = (GENERATORS.steam.fuel.coal * fuelMult()) / (GENERATORS.steam.power * gm);
@@ -941,20 +1074,22 @@ function simulate(dt, eff){
   const gr = globalRate(), ie = inputEff(), re = rawEff(), mm = marketMult();
   const inF = r => m.in[r] * ie * (ITEMS[r].t===0 ? re : 1) * ocInput();   // per-input amount (raw cut; overclock burns more)
   const pr = computePower(dt);                       // power throttles every consumer proportionally
+  const rawFree = st("rawFree")>0;                   // MECHANIC node: raw extractors ignore the grid
+  const noBP = st("noBackpressure")>0;               // MECHANIC node: machines don't throttle on full buffers (overflow discarded)
   var m;
   for(const key of MORDER){
     if(!state.unlocked[key]) continue;
     m = MACHINES[key]; const count = state.machines[key]||0;
     if(count<=0) continue;
-    let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * (m.t===0 ? prospectMult() : 1) * ocSpeed() * pr * dt;
+    let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * (m.t===0 ? prospectMult() : 1) * ocSpeed() * ((m.t===0 && rawFree) ? 1 : pr) * dt;
     for(const r in m.in){ cyc=Math.min(cyc, (state.items[r]||0)/inF(r)); }
     const cycPot = cyc * eff;                          // potential output: input-limited, BEFORE full-buffer backpressure
     if(cycPot>0) for(const r in m.out) potMade[r]=(potMade[r]||0)+m.out[r]*cycPot;
-    for(const r in m.out){ const space=capOf(r)-(state.items[r]||0); cyc=Math.min(cyc, space/m.out[r]); }
+    if(!noBP) for(const r in m.out){ const space=capOf(r)-(state.items[r]||0); cyc=Math.min(cyc, space/m.out[r]); }
     cyc *= eff;
     if(cyc<=0) continue;
-    for(const r in m.in)  state.items[r] -= inF(r)*cyc;
-    for(const r in m.out){ const add=m.out[r]*cyc; state.items[r]+=add; state.stats.produced+=add; state.stats.made[r]=(state.stats.made[r]||0)+add; }
+    for(const r in m.in)  state.items[r] -= inF(r)*cyc;   // inputs consumed at full rate even if output spills (the noBP tradeoff)
+    for(const r in m.out){ const add=m.out[r]*cyc, kept=Math.min(add, Math.max(0, capOf(r)-(state.items[r]||0))); state.items[r]+=kept; state.stats.produced+=kept; state.stats.made[r]=(state.stats.made[r]||0)+kept; }
   }
   // Von Neumann Fleet self-replicates (logistic) toward the cap set by how many probes you've launched — runs offline too.
   if((state.fleet||0)>0){ const fc=fleetCap();
@@ -1024,7 +1159,7 @@ function checkMilestones(){
 }
 function checkAgeGoals(){
   let any=false;
-  for(let a=1;a<=6;a++){ const g=AGE_GOALS[a]; if(!g||state.ageGoals[a]) continue;
+  for(let a=1;a<=MAX_AGE;a++){ const g=AGE_GOALS[a]; if(!g||state.ageGoals[a]) continue;
     if((state.stats.made[g.item]||0) >= g.n){ state.ageGoals[a]=true; any=true; screenFlash(); toast(`🏆 Age ${ROMAN[a]} mastered: ${g.desc}!`,"unlock"); } }
   if(any){ recomputeStats(); SND.goal(); }
 }
@@ -1052,6 +1187,7 @@ function tick(){
     }
     rate.credit+=((state.credits-before.credit)/dt - rate.credit)*k;
   }
+  metaAuto();   // Ascension automations: auto-allocate/prestige/patent/ascend the lower loops
   updateUI();
 }
 
@@ -1114,13 +1250,18 @@ function ensureMachines(){
   const host=el("machines"); if(host.dataset.built && !structureDirty) return;
   // group by age, only unlocked
   let html="";
-  for(let age=1;age<=6;age++){
+  for(let age=1;age<=MAX_AGE;age++){
     const keys=MORDER.filter(k=>TIER_AGE[MACHINES[k].t]===age && state.unlocked[k]);
     if(!keys.length){
       // Age-gated frontier: show a visible lock and stop (higher ages are locked too).
-      if(!ageUnlocked(age) && AGE_REQ[age]>0){
+      if(!ageUnlocked(age) && (AGE_REQ[age]>0 || (AGE_DM[age]||0)>0)){
+        const needBP=(state.stats.bpEarned||0)<AGE_REQ[age], needDM=(state.stats.dmEarned||0)<(AGE_DM[age]||0);
+        const reqs=[];
+        if(AGE_REQ[age]>0) reqs.push(`<b>${fmt(AGE_REQ[age])} 📐 Blueprints</b> in total ${needBP?`<span class="muted">(have ${fmt(state.stats.bpEarned||0)})</span>`:`<span class="pos">✓</span>`}`);
+        if((AGE_DM[age]||0)>0) reqs.push(`<b>${fmt(AGE_DM[age])} 🌑 Dark Matter</b> earned ${needDM?`<span class="muted">(have ${fmt(state.stats.dmEarned||0)})</span>`:`<span class="pos">✓</span>`}`);
+        const how = needDM ? `<b>🌑 Ascend</b> across eras to accumulate Dark Matter` : `<b>♻ Restructure</b> and spend in the tree to progress`;
         html+=`<div class="tier-h" style="opacity:.75">🔒 ${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n} — locked</div>
-          <div class="st" style="padding:7px 10px;line-height:1.55">Earn <b>${AGE_REQ[age]} 📐 Blueprints</b> in total to unlock this age's machines — <b>♻ Restructure</b> and spend in the tree to progress. <span class="muted">(earned so far: ${fmt(state.stats.bpEarned||0)} 📐)</span></div>`;
+          <div class="st" style="padding:7px 10px;line-height:1.55">Requires ${reqs.join(" and ")} to unlock this age's machines — ${how}.</div>`;
         break;
       }
       continue;
@@ -1284,7 +1425,7 @@ function updateUI(){
       : `Mine to strike a Rich Vein (${fmt(state.prospect||0)}/${PROSPECT_MAX})`; }
   el("objective").innerHTML="🎯 "+currentObjective();
   { const ca=currentAge(), A=AGES[ca], g=AGE_GOALS[ca];
-    const rec = state.maxAge>ca ? `record: Age ${ROMAN[state.maxAge]}` : (ca<6 ? `next: Age ${ROMAN[ca+1]}` : "max age");
+    const rec = state.maxAge>ca ? `record: Age ${ROMAN[state.maxAge]}` : (ca<MAX_AGE ? `next: Age ${ROMAN[ca+1]}` : "max age");
     let goal="";
     if(g){ goal = state.ageGoals[ca]
       ? `<span class="pos" style="font-size:12px">· 🏆 age mastered</span>`
@@ -1312,6 +1453,26 @@ function updateUI(){
       el("fleetRep").innerHTML=(state.fleet>0 && !atCap)?`<span class="pos">▲ growing</span>`:(atCap?`<span class="muted">at cap — launch more</span>`:`—`);
       el("fleetHint").textContent=avail>=1?`${fmt(avail)} probe${avail===1?"":"s"} ready to launch`:(state.fleet>0?`Fleet colonizing — build & launch more probes to raise the cap`:`Build Probes, then launch them`);
       el("launch1").disabled=avail<1; el("launch10").disabled=avail<1; el("launchMax").disabled=avail<1;
+    } }
+  { const showD=(state.maxAge>=7)||(state.dysonSwarm>0)||((state.items.dysonPanel||0)>=1);
+    el("dysonPanel").style.display=showD?"":"none";
+    if(showD){ const avail=Math.floor(state.items.dysonPanel||0);
+      el("dysonSize").textContent=fmt(state.dysonSwarm||0);
+      el("dysonMW").textContent=fmt(dysonPower())+" MW";
+      el("dysonHint").textContent=avail>=1?`${fmt(avail)} panel${avail===1?"":"s"} ready to deploy`:(state.dysonSwarm>0?`Swarm feeding the grid — build & deploy more panels for more power`:`Build Dyson Panels, then deploy them`);
+      el("dyson1").disabled=avail<1; el("dyson10").disabled=avail<1; el("dysonMax").disabled=avail<1;
+    } }
+  { const showFk=(state.maxAge>=8)||(state.forks>0)||((state.items.realityShard||0)>=1);
+    el("forkPanel").style.display=showFk?"":"none";
+    if(showFk){ const cost=forkCost(), have=Math.floor(state.items.realityShard||0), canFork=have>=cost;
+      el("forkCount").textContent=fmt(state.forks||0);
+      el("forkMultTxt").textContent="×"+forkMult().toFixed(2);
+      el("forkPower").textContent=fmt(forkDraw())+" MW";
+      const brownout=(state.forks||0)>0 && lastPower.ratio<0.999;
+      el("forkHint").innerHTML = brownout
+        ? `<span class="warn">⚠ Your forks are under-powered (grid at ${Math.round(lastPower.ratio*100)}%) — expand the Dyson Swarm or collapse forks.</span>`
+        : `Next fork costs <b>${fmt(cost)}</b> 🔮 (have ${fmt(have)}) · draws +${fmt(FORK_MW*((state.forks||0)+1))} MW`;
+      el("forkOpen").disabled=!canFork; el("forkCollapse").disabled=(state.forks||0)<1;
     } }
 
   ensureTicker(); ensureMachines(); ensureMarketSel(); ensureGenerators(); ensureAchievements(); ensureTalents();
@@ -1477,9 +1638,25 @@ function updateUI(){
       el("patentBody").innerHTML=html+`</div>`;
     }
   }
+  // ascension (deepest prestige layer) — show its tab once unlocked, render when visible
+  el("tabAscension").style.display = ascensionUnlocked() ? "" : "none";
+  if(el("tab-ascension").classList.contains("on")){
+    el("dmCount").textContent="🌑 "+fmt(state.darkMatter||0);
+    const dg=darkMatterAvailable();
+    let html=`<div class="toolrow"><button class="b mk" id="ascendBtn" style="max-width:290px" ${dg<1?"disabled":""}>🌑 Ascend<small>${dg>=1?"+"+fmt(dg)+" 🌑 · deep reset, re-locks the ages":"grow Blueprints earned this era"}</small></button>
+      <span class="muted" style="font-size:12px">This era: <b>${fmt(state.stats.bpEarned||0)}</b> 📐 earned · <b>${fmt(state.ascensions||0)}</b> ascensions. Dark Matter upgrades, mastery &amp; age record are kept.</span></div>
+      <div class="grid" style="margin-top:10px">`;
+    for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, maxed=l>=u.max, cost=dmCost(u,l), can=!maxed && (state.darkMatter||0)>=cost;
+      const status = u.max>1 ? `<span class="mk">Lv ${l}/${u.max}</span>` : (l>0?`<span class="pos" style="font-size:11px">✓ active</span>`:``);
+      const btnLabel = maxed ? (u.max>1?"MAX":"✓ active") : `${l>0&&u.max>1?"Upgrade":"Activate"} <small>🌑 ${cost}</small>`;
+      html+=`<div class="mc${l>0?' done':''}"><div class="ic">${u.ic}</div><div><div class="name">${u.name} ${status}</div><div class="rec">${u.desc}</div></div>
+        <div class="btns"><button class="b mk${can?' can':''}" data-dm="${u.id}" ${can?'':'disabled'}>${btnLabel}</button></div></div>`;
+    }
+    el("ascensionBody").innerHTML=html+`</div>`;
+  }
   // achievements + age goals (only when Stats tab visible)
   if(el("tab-stats").classList.contains("on")){
-    el("ageGoalList").innerHTML=[1,2,3,4,5,6].map(a=>{ const g=AGE_GOALS[a], done=!!state.ageGoals[a], made=Math.floor(state.stats.made[g.item]||0);
+    el("ageGoalList").innerHTML=ALL_AGES.map(a=>{ const g=AGE_GOALS[a], done=!!state.ageGoals[a], made=Math.floor(state.stats.made[g.item]||0);
       return `<div class="mc ach${done?' done':''}"><div class="ic">${done?'🏆':AGES[a].ic}</div>
         <div><div class="name">Age ${ROMAN[a]} — ${AGES[a].n}</div>
         <div class="rec">${g.desc} · ${fmt(Math.min(made,g.n))}/${fmt(g.n)} ${ITEMS[g.item].ic}</div>
@@ -1548,15 +1725,27 @@ function recallRobots(n){ const space=Math.floor(capOf("robot")-(state.items.rob
 function launchProbes(n){ const have=Math.floor(state.items.probe||0); n=Math.min(n,have); if(n<=0)return;
   state.items.probe-=n; state.launched=(state.launched||0)+n; state.fleet=(state.fleet||0)+n;   // permanent — no recall
   toast(`🛰️ Launched ${fmt(n)} probe${n===1?'':'s'} — the fleet will self-replicate`, "unlock"); SND.goal(); updateUI(); }
+function deployDyson(n){ const have=Math.floor(state.items.dysonPanel||0); n=Math.min(n,have); if(n<=0)return;
+  state.items.dysonPanel-=n; state.dysonSwarm=(state.dysonSwarm||0)+n;   // permanent — panels become swarm, feed the grid
+  recomputeStats(); toast(`🔆 Deployed ${fmt(n)} panel${n===1?'':'s'} — swarm now feeds +${fmt(dysonPower())} MW`, "unlock"); SND.goal(); updateUI(); }
+function openFork(){ const c=forkCost(); if((state.items.realityShard||0) < c) return;   // shards are consumed — you can't cleanly un-fork reality
+  state.items.realityShard -= c; state.forks=(state.forks||0)+1; recomputeStats();
+  toast(`🌀 Reality forked — ${state.forks} parallel ${state.forks===1?'timeline':'timelines'} (×${forkMult().toFixed(2)} production, +${fmt(forkDraw())} MW draw)`, "unlock"); SND.goal(); updateUI(); }
+function collapseForks(n){ n=Math.min(n, state.forks||0); if(n<=0)return;               // emergency valve: close branches to free grid power (no shard refund)
+  state.forks-=n; recomputeStats(); toast(`Collapsed ${n} fork${n===1?'':'s'} — grid draw reduced`, ""); updateUI(); }
+function restructure(gain){   // core Restructure (silent — callers add juice; also used by Auto-Restructure)
+  state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; state.lastBpGain=gain;
+  freshRun(state); recomputeStats();
+  for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; structureDirty=true; resetStructureDOM();
+  save(); updateUI(); renderTree();
+}
 function doPrestige(){
   const gain=bpFor(state.runCredits); if(gain<1)return;
   openModal(`<h3>♻ Restructure the factory?</h3>
     <p class="muted">Resets all resources, Credits, machines, Mk levels, warehouses & terminals. Your Advancement tree and Talents are kept. (Talent Points come from production, not Restructuring.)</p>
     <ul><li>Gain <b>+${fmt(gain)} 📐 Blueprints</b> (→ ${fmt(state.blueprints+gain)})</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cp">Restructure</button></div>`);
-  el("cp").onclick=()=>{ state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; freshRun(state); recomputeStats();
-    for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; structureDirty=true; resetStructureDOM();
-    closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Restructured! +${fmt(gain)} 📐`,"unlock"); };
+  el("cp").onclick=()=>{ restructure(gain); closeModal(); screenFlash(); SND.prestige(); toast(`Restructured! +${fmt(gain)} 📐`,"unlock"); };
 }
 function doFilePatent(){
   const gain=patentAvailable(); if(gain<1) return;
@@ -1565,12 +1754,61 @@ function doFilePatent(){
     <ul><li>Gain <b>+${fmt(gain)} ⚛ Patents</b> (→ ${fmt((state.patents||0)+gain)})</li>
     <li>Patent upgrades are permanent — they survive every reset.</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cfp">File Patent</button></div>`);
-  el("cfp").onclick=()=>{ state.patents=(state.patents||0)+gain; state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;
-    freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; recomputeStats(); resetStructureDOM();
-    closeModal(); save(); updateUI(); renderTree(); screenFlash(); SND.prestige(); toast(`Patent filed! +${fmt(gain)} ⚛`,"unlock"); };
+  el("cfp").onclick=()=>{ filePatent(gain); closeModal(); screenFlash(); SND.prestige(); toast(`Patent filed! +${fmt(gain)} ⚛`,"unlock"); };
+}
+function filePatent(gain){   // core File-Patent (silent; also used by Auto-Patent)
+  state.patents=(state.patents||0)+gain; state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;
+  freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0;
+  recomputeStats(); resetStructureDOM(); save(); updateUI(); renderTree();
 }
 function upgradePatent(id){ const p=PATENTS.find(x=>x.id===id); if(!p) return; const l=state.patentUpg[id]||0;
   const cost=patentCost(p,l); if((state.patents||0)<cost) return; state.patents-=cost; state.patentUpg[id]=l+1; recomputeStats(); updateUI(); SND.build(); toast(`${p.name} → level ${l+1}`,"unlock"); }
+function doAscend(){
+  const gain=darkMatterAvailable(); if(gain<1) return;
+  openModal(`<h3>🌑 Ascend?</h3>
+    <p class="muted">The deepest reset — collapse your civilization into a singularity. Wipes the factory, Credits, <b>Blueprints, the Advancement tree, Talents' spent points aside, Patents, and the Fleet</b>, and <b>re-locks the ages</b>. Kept forever: <b>Dark Matter &amp; its upgrades, age mastery, achievements, and your age record</b> (permanent production dividend).</p>
+    <ul><li>Gain <b>+${fmt(gain)} 🌑 Dark Matter</b> (→ ${fmt((state.darkMatter||0)+gain)})</li>
+    <li>Dark Matter upgrades are permanent and make every future climb faster — the engine for the long game.</li></ul>
+    <div class="rw"><button data-close>Cancel</button><button class="primary" id="casc">Ascend</button></div>`);
+  el("casc").onclick=()=>{ ascend(gain); closeModal(); screenFlash(); SND.prestige(); toast(`🌑 Ascended! +${fmt(gain)} Dark Matter`,"unlock"); };
+}
+function ascend(gain){   // core Ascension (silent; also used by Auto-Ascend)
+  state.darkMatter=(state.darkMatter||0)+gain; state.ascensions=(state.ascensions||0)+1;
+  state.stats.dmEarned=(state.stats.dmEarned||0)+gain;   // LIFETIME Dark Matter (never spent) — the cross-era progression axis
+  if(state.stats.dmEarned>=(AGE_DM[MAX_AGE]||0) && (state.maxAge||1)<MAX_AGE) toast(`🌀 Transcendence unlocked — Age ${ROMAN[MAX_AGE]} is now reachable`, "unlock");
+  state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;   // Blueprints + tree
+  state.patents=0; state.patentUpg={};                                 // Patents
+  state.fleet=0; state.launched=0;                                     // Fleet
+  state.stats.bpEarned=0;                                              // re-lock the ages
+  freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0;
+  recomputeStats(); resetStructureDOM(); save(); updateUI(); renderTree();
+}
+function upgradeDM(id){ const u=DM_AUTO.find(x=>x.id===id); if(!u) return; const l=state.dmUpg[id]||0; if(l>=u.max) return;
+  const cost=dmCost(u,l); if((state.darkMatter||0)<cost) return; state.darkMatter-=cost; state.dmUpg[id]=l+1; updateUI(); SND.build(); toast(`${u.name} ${u.max>1?"→ level "+(l+1):"activated"}`,"unlock"); }
+// Greedily allocate available Blueprints into the highest-value tree nodes (Blueprint Autopilot).
+function autoAllocateBP(){ let g=0;
+  while(g++<80){ let best=null, bestPer=-1;
+    for(const id in NODES){ if(state.allocated[id] || !nodeAvailable(id)) continue; const n=NODES[id]; if(n.cost>state.blueprints) continue;
+      let sc=0; for(const k in n.eff) sc += Math.abs(n.eff[k])*(k==="prod"||k==="bp"?3:k==="auto"?50:1); const per=(sc+0.01)/Math.max(1,n.cost);
+      if(per>bestPer){ bestPer=per; best=id; } }
+    if(!best) break; state.blueprints-=NODES[best].cost; state.allocated[best]=true; state.stats.allocs=(state.stats.allocs||0)+1; }
+  recomputeStats();
+}
+// Greedily spend Talent Points on the cheapest available talent (Talent Autopilot).
+function autoBuyTalents(){ let g=0;
+  while(g++<80){ let best=null, bc=Infinity;
+    for(const t of TALENTS){ if(!tierUnlocked(t.tier)) continue; const r=state.talents[t.id]||0; if(r>=t.max) continue; const c=talentCost(t,r); if(c<=(state.talentPoints||0) && c<bc){ bc=c; best=t; } }
+    if(!best) break; const r=state.talents[best.id]||0; state.talentPoints-=talentCost(best,r); state.talents[best.id]=r+1; }
+  recomputeStats();
+}
+// Ascension meta-automation: runs & reshapes the lower prestige loops. Called each tick.
+function metaAuto(){
+  if(dmHas("bpAuto") && (state.blueprints||0)>0) autoAllocateBP();
+  if(dmHas("talAuto") && (state.talentPoints||0)>0) autoBuyTalents();
+  if(dmHas("autoRes")){ const g=bpFor(state.runCredits); if(g>=1 && g>=Math.max(2, Math.ceil((state.lastBpGain||1)*1.25))) restructure(g); }
+  if(dmHas("autoPat") && patentsUnlocked()){ const g=patentAvailable(); if(g>=1) filePatent(g); }
+  if(dmHas("autoAsc") && ascensionUnlocked()){ const g=darkMatterAvailable(); if(g>=1) ascend(g); }
+}
 
 /* =========================================================================
    SAVE / LOAD / OFFLINE
@@ -1586,7 +1824,7 @@ function migrate(s){
   out.generators=Object.assign({},d.generators,s.generators||{});
   out.allocated=Object.assign({start:true}, s.allocated||{});
   out.milestones=Object.assign({}, s.milestones||{});
-  out.stats=Object.assign({built:0,bpEarned:0,allocs:0,produced:0,made:{}}, s.stats||{});
+  out.stats=Object.assign({built:0,bpEarned:0,allocs:0,produced:0,made:{},dmEarned:0}, s.stats||{});
   if(!out.stats.made) out.stats.made={};
   out.ageGoals=Object.assign({}, s.ageGoals||{});
   out.auto=Object.assign({}, s.auto||{});
@@ -1602,6 +1840,7 @@ function migrate(s){
   out.talentPoints = (typeof s.talentPoints==="number") ? s.talentPoints : out.tpClaimed;
   out.patents = s.patents||0;
   out.patentUpg = Object.assign({}, s.patentUpg||{});
+  out.darkMatter = s.darkMatter||0; out.dmUpg = Object.assign({}, s.dmUpg||{}); out.ascensions = s.ascensions||0;   // Ascension layer
   out.bpCycle = s.bpCycle||0;
   out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
   out.fleet = s.fleet||0; out.launched = s.launched||0;   // Von Neumann Fleet is permanent
@@ -1645,13 +1884,14 @@ function closeModal(){ el("scrim").classList.remove("show"); }
 function ageRoadmap(){
   const ca=currentAge();
   let rows="";
-  for(let a=1;a<=6;a++){
+  for(let a=1;a<=MAX_AGE;a++){
     const unlocked=ageUnlocked(a), reached=(state.maxAge||1)>=a, mastered=!!state.ageGoals[a], cur=ca===a, g=AGE_GOALS[a];
     const status = mastered?`<span class="pos">🏆 mastered</span>` : cur?`<span class="pos">▶ current</span>`
       : reached?`<span class="muted">✓ reached</span>` : unlocked?`<span class="muted">unlocked</span>` : `<span class="neg">🔒 locked</span>`;
-    const gate = AGE_REQ[a]>0
-      ? `${AGE_REQ[a]} 📐${unlocked?` <span class="pos">✓</span>`:` <span class="muted">(have ${fmt(state.stats.bpEarned||0)})</span>`}`
-      : `<span class="muted">free</span>`;
+    const gateParts=[];
+    if(AGE_REQ[a]>0) gateParts.push(`${fmt(AGE_REQ[a])} 📐${(state.stats.bpEarned||0)>=AGE_REQ[a]?` <span class="pos">✓</span>`:` <span class="muted">(${fmt(state.stats.bpEarned||0)})</span>`}`);
+    if((AGE_DM[a]||0)>0) gateParts.push(`${fmt(AGE_DM[a])} 🌑${(state.stats.dmEarned||0)>=AGE_DM[a]?` <span class="pos">✓</span>`:` <span class="muted">(${fmt(state.stats.dmEarned||0)})</span>`}`);
+    const gate = gateParts.length ? gateParts.join(" + ") : `<span class="muted">free</span>`;
     const goalTxt = g ? (mastered?`<span class="pos">🏆 ${g.desc} — done</span>`:`${g.desc} · ${fmt(Math.floor(state.stats.made[g.item]||0))}/${fmt(g.n)}`) : "—";
     rows += `<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0;${cur?"border-color:var(--accent);":""}${unlocked?"":"opacity:.6;"}">
       <div><b>${AGES[a].ic} Age ${ROMAN[a]} · ${AGES[a].n}</b> — ${status}</div>
@@ -1707,7 +1947,7 @@ function chainHealth(){
 function updateHUD(){
   const h=el("hud"); if(!state.hud){ h.style.display="none"; return; } h.style.display="block";
   const ca=currentAge(), b=bottleneck(), ch=chainHealth(), pw=lastPower;
-  const ages=[1,2,3,4,5,6].filter(a=>sessionAgeTimes[a]!==undefined).map(a=>`${ROMAN[a]} ${dur(sessionAgeTimes[a])}`).join(" · ");
+  const ages=ALL_AGES.filter(a=>sessionAgeTimes[a]!==undefined).map(a=>`${ROMAN[a]} ${dur(sessionAgeTimes[a])}`).join(" · ");
   const tot=Object.values(state.machines).reduce((a,c)=>a+c,0);
   h.innerHTML=`<div class="hudh">📊 Session HUD <span id="hudClose">×</span></div>
     <div class="hudrow"><span>Time</span><b>${dur((Date.now()-sessionStart)/1000)}</b></div>
@@ -1736,9 +1976,11 @@ function currentObjective(){
   if((m.ironFurnace||0)<1) return "Build a <b>Coal Drill</b> and an <b>Iron Furnace</b> to turn Ore + Coal into Iron Plates.";
   if((m.gearPress||0)<1) return "Stockpile Iron Plates and build a <b>Gear Press</b> to open the tech tree.";
   if((m.circuitFab||0)<1) return "Expand the Copper line + a <b>Steel Mill</b>, then build a <b>Circuit Fab</b>.";
-  { const locked=[4,5,6].find(a=>!ageUnlocked(a));   // hard age-gate: prestige to advance past a locked age
-    if(locked!==undefined && currentAge()>=locked-1)
-      return `${AGES[locked].ic} <b>Age ${ROMAN[locked]} is locked</b> — earn <b>${AGE_REQ[locked]} 📐 Blueprints</b> total (you have ${fmt(state.stats.bpEarned||0)}). <b>♻ Restructure</b> and spend in 🌳 Advancements to unlock it.`; }
+  { const locked=ALL_AGES.filter(a=>a>=4).find(a=>!ageUnlocked(a));   // hard age-gate: prestige to advance past a locked age
+    if(locked!==undefined && currentAge()>=locked-1){
+      if((state.stats.dmEarned||0)<(AGE_DM[locked]||0))   // DM-gated (top age): the cross-era progression goal
+        return `${AGES[locked].ic} <b>Age ${ROMAN[locked]} is locked</b> — accumulate <b>${fmt(AGE_DM[locked])} 🌑 Dark Matter</b> earned (you have ${fmt(state.stats.dmEarned||0)}). <b>🌑 Ascend</b> across eras to reach it.`;
+      return `${AGES[locked].ic} <b>Age ${ROMAN[locked]} is locked</b> — earn <b>${fmt(AGE_REQ[locked])} 📐 Blueprints</b> total (you have ${fmt(state.stats.bpEarned||0)}). <b>♻ Restructure</b> and spend in 🌳 Advancements to unlock it.`; } }
   if((m.assembler||0)<1) return "Build an <b>Assembler</b> to craft Mechanisms — the gateway to Robotics.";
   if(state.prestiges<1 && state.runCredits<PRESTIGE_SCALE) return `Grow income to <b>${money(PRESTIGE_SCALE)}</b> this run, then <b>♻ Restructure</b> for Blueprints.`;
   if(state.prestiges<1) return "You can <b>♻ Restructure</b> now for your first Blueprints — spend them in 🌳 Advancements.";
@@ -1749,6 +1991,12 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.38.0","Ascension now DRIVES progression — the long game finally advances instead of repeating. Before, once you'd built out the meta, every Ascension era just re-ground the same Blueprints and you plateaued around the Space Age; the top ages were effectively out of reach. Two changes fix that. (1) Ascension now grants LIFETIME Dark Matter that never gets spent away — it's a permanent record of how far you've come. Spending Dark Matter on automations no longer sets you back. (2) That lifetime Dark Matter powers an Ascendant Foundation: every reset now pre-builds a balanced head-start factory that grows the more you've ascended, so each era you re-climb HIGHER than the last instead of starting from zero. And the 🌀 Transcendence Age (Age VIII) is now gated behind accumulated Dark Matter — it's the destination you work toward across many Ascensions, not something a single run can brute-force. The result: a genuine hundreds-of-hours arc where every Ascension visibly pushes your ceiling upward. (Balanced with a new full-game pacing sim.)"],
+  ["0.37.0","The Transcendence Age gets its signature: 🌀 Reality Forking. Once you're compiling Reality Shards, you can spend them to FORK your entire factory into parallel timelines — every fork is a full copy of your production running at once, so it's a multiplier on ALL output. But a parallel reality is ferociously power-hungry and the draw escalates with each fork you open, so you can only run as many as your Dyson Swarm can feed — over-fork and the whole grid browns out. It's the culmination lever: doubly-resourced (Reality Shards to open a fork, grid power to sustain it), tying the Dyson Swarm (Age VII) directly into the Age VIII endgame. Open forks with 🔮 to spend, collapse them to reclaim power. This is the final piece of the cosmic expansion — the whole factory, forked across realities."],
+  ["0.36.0","The journey goes further still — the 🌀 Transcendence Age (Age VIII), where you stop mining reality and start computing it. A 💠 Quantum Fab spins Dyson Panels into Qubits, a 🪐 Matrioshka Node folds Qubits and Antimatter into Simulated Matter, and a 🔮 Reality Compiler forges Reality Shards — the deepest, most expensive chain in the game (gated at 2,800 Blueprints earned). This age also completes the signatures: the 🔆 Dyson Swarm (Age VII) is live. Deploy your Dyson Panels into a swarm ringing the star and each one permanently feeds the grid enormous free power (scaled by your generator tech) — finally an answer to the crushing late-game power draw. Deploy panels, power the reality forge, transcend."],
+  ["0.35.0","The Advancement tree is more than +x% now. Sprinkled through the arms are new qualitative nodes: SYNERGY nodes that scale with how you're playing (Economies of Scale: +production per 100 machines; Ancestral Knowledge: +production per age reached; Diversified Portfolio: +sale value per unlocked item; Compound Interest: +Blueprints per age; Vertical Integration: Warehouses also boost production), MECHANIC-CHANGERS that rewrite the rules (Frictionless Chains: machines never backpressure; Autonomous Mining: raw extractors ignore the power grid), and a TRADEOFF keystone (Redline: +90% production but +45% power demand). Alongside the existing Auto-Builder unlock, the tree now has real build-defining choices, not just numbers to stack."],
+  ["0.34.0","🌑 Ascension — a whole new prestige layer, and it's unlike the others. Reach the Interstellar Age and an Ascension tab appears. Ascending collapses everything (factory, Blueprints, tree, Patents, Fleet) and re-locks the ages, granting 🌑 Dark Matter from the Blueprints you earned this era. Instead of buying more +% (that's what Patents are for), Dark Matter buys AUTOMATION that runs the lower game for you: Blueprint Autopilot (auto-allocates the whole tree — no more clicking 300 nodes), Talent Autopilot, a Genesis Cache head-start on every reset, Auto-Restructure, Auto-Patent, and finally Auto-Ascend. The point: automate the shallow loops so you operate at cosmic scale — climb, ascend, come back with the whole grind running itself. Your age record (+ its permanent dividend), mastery, and achievements are always kept. This is the engine for the hundreds-of-hours long game."],
+  ["0.33.0","The game now goes past the Space Age — welcome to the 🌌 Interstellar Age (Age VII). Your Von Neumann fleet reaches the stars: a new 🌠 Star Scoop harvests Hydrogen, an ✴️ Antimatter Reactor forges Antimatter, and a 🔆 Dyson Foundry assembles Dyson Panels toward a Dyson swarm. It's gated deep (needs 1,200 Blueprints earned) and its machines scale hardest of all. This is the first step of a much larger expansion — more ages, a new prestige layer, and a richer advancement tree are coming, aiming to take the game into the hundreds of hours."],
   ["0.32.0","Accumulators actually matter now. Instead of a mostly-dormant power buffer, a charged bank now channels its stored energy into your whole factory — a real production boost that scales with how much power you've banked (√ diminishing). So there's finally a reason to over-build generators and stack accumulators: surplus power → full bank → faster production. They still soak up deficits as a safety net too. (Bonus shown live in the 🔋 Accumulators panel.)"],
   ["0.31.0","Auto-Balance is now a true whole-factory auto-pilot — no more chasing bottlenecks. When you turn it on (Age IV), it balances your ENTIRE chain automatically: it builds whichever machine is most starved, keeps the power grid funded, and adds storage when buffers fill — all without you having to flag each machine individually. It self-limits (a product nothing uses stays full, so it's never over-built), so once you flip it on the factory maintains its own ratios and you're free to focus on the tree, prestige, and the endgame. The old per-machine Auto flags still work for finer manual control when Auto-Balance is off."],
   ["0.30.1","Pacing rebalance for the bigger tree. The ages are now spread across the journey instead of all unlocking in the first couple hours: the Blueprints needed to reach the Automation, Robotic, and Space ages went up (to 10 / 80 / 400 earned), so you reach robots and probes around the mid-game, and the 300-node tree + self-replicating fleet carry the long tail. Blueprint yield and the tree itself were left as-is — a beefed-up balance sim showed they're already well-scaled."],
@@ -1847,16 +2095,22 @@ function wire(){
   el("launch1").addEventListener("click",()=>launchProbes(1));
   el("launch10").addEventListener("click",()=>launchProbes(10));
   el("launchMax").addEventListener("click",()=>launchProbes(Math.floor(state.items.probe||0)));
+  el("dyson1").addEventListener("click",()=>deployDyson(1));
+  el("dyson10").addEventListener("click",()=>deployDyson(10));
+  el("dysonMax").addEventListener("click",()=>deployDyson(Math.floor(state.items.dysonPanel||0)));
+  el("forkOpen").addEventListener("click",openFork);
+  el("forkCollapse").addEventListener("click",()=>collapseForks(state.forks||0));
   el("buildAcc").addEventListener("click",buildAccumulator);
   el("talents").addEventListener("click",e=>{ const b=e.target.closest("[data-talent]"); if(b) upgradeTalent(b.dataset.talent); });
   el("patentBody").addEventListener("click",e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });
+  el("ascensionBody").addEventListener("click",e=>{ if(e.target.closest("#ascendBtn")) doAscend(); const u=e.target.closest("[data-dm]"); if(u) upgradeDM(u.dataset.dm); });
   const modes=el("buymode").querySelectorAll("button");
   modes.forEach(b=>b.addEventListener("click",()=>{ buyMode=b.dataset.mode; modes.forEach(x=>x.classList.toggle("on",x===b)); updateUI(); }));
   modes.forEach(b=>b.classList.toggle("on", b.dataset.mode==="1"));
 
   el("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-tab]"); if(!b)return;
     [...el("tabs").children].forEach(x=>x.classList.toggle("on",x===b));
-    ["factory","power","storage","tree","talents","patents","stats"].forEach(t=>el("tab-"+t).classList.toggle("on",t===b.dataset.tab));
+    ["factory","power","storage","tree","talents","patents","ascension","stats"].forEach(t=>el("tab-"+t).classList.toggle("on",t===b.dataset.tab));
     if(b.dataset.tab==="tree"){ centerTree(); renderTree(); }
     updateUI(); });
 

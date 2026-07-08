@@ -16,8 +16,8 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 (() => {
   const s = fresh();
   eq("version present", typeof E.VERSION, "string");
-  eq("producer machine count", E.MORDER.length, 26);
-  eq("item count", Object.keys(E.ITEMS).length, 24);
+  eq("producer machine count", E.MORDER.length, 32);
+  eq("item count", Object.keys(E.ITEMS).length, 30);
   ok("alloy branch exists", !!E.ITEMS.alloy && !!E.MACHINES.alloyFurnace);
   ok("concrete branch exists", !!E.ITEMS.concrete && !!E.MACHINES.cementKiln);
   ok("foundry interconnects alloy->steel", E.MACHINES.foundry && E.MACHINES.foundry.in.alloy && E.MACHINES.foundry.out.steel);
@@ -202,7 +202,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   eq("gear press -> Age II", E.currentAge(), 2);
   E.state.machines.aiFoundry = 1;                        // tier 6 -> Age VI
   eq("AI foundry -> Age VI", E.currentAge(), 6);
-  eq("6 ages defined", E.AGES.filter(Boolean).length, 6);
+  eq("8 ages defined", E.AGES.filter(Boolean).length, 8);
 
   // permanent per-age dividend feeds production via maxAge
   fresh(); E.state.maxAge = 4; E.recomputeStats();
@@ -331,7 +331,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
 // ---------------------------------------------------------------- age goals
 (() => {
-  eq("6 age goals defined", E.AGE_GOALS.filter(Boolean).length, 6);
+  eq("8 age goals defined", E.AGE_GOALS.filter(Boolean).length, 8);
 
   // completing a goal (cumulative production of its key item) latches it + grants its reward
   fresh();
@@ -653,8 +653,8 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("roadmap shows a lock for gated ages at 0 Blueprints", html.includes("🔒 locked"));
   ok("roadmap surfaces the Blueprint gate cost", html.includes(String(E.AGE_REQ[6])));
 
-  // With Age IV's threshold met, it's no longer shown as locked at that tier.
-  fresh(); E.state.stats.bpEarned = E.AGE_REQ[6];   // everything unlocked
+  // With the highest threshold met, no age is shown as locked.
+  fresh(); E.state.stats.bpEarned = Math.max(...E.AGE_REQ); E.state.stats.dmEarned = Math.max(...E.AGE_DM);   // everything unlocked (BP + DM gates)
   ok("roadmap has no locks once all ages are unlocked", !E.ageRoadmap().includes("🔒 locked"));
 })();
 
@@ -697,6 +697,270 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   E.state.accumulators = 5; E.state.machines.miner = 1;   // ~1 MW demand vs 200 MW base grid → big surplus
   E.computePower(10);
   ok("accumulators bank surplus power (up to capacity)", E.state.charge > 0 && E.state.charge <= 5 * E.ACCUMULATOR.cap + 1e-6);
+})();
+
+// ---------------------------------------------------------------- Age VII: Interstellar chain (cosmic expansion)
+(() => {
+  // Age VII machines gate behind AGE_REQ[7]; Star Scoop (tier 0) is the ungated prereq.
+  fresh();
+  E.state.stats.bpEarned = 0; E.state.machines.starScoop = 1; E.refreshUnlocks(true);
+  ok("Antimatter Reactor locked below its Blueprint gate", !E.state.unlocked.antimatterReactor);
+  E.state.stats.bpEarned = E.AGE_REQ[7]; E.refreshUnlocks(true);
+  ok("Age VII unlocks at its Blueprint gate", !!E.state.unlocked.antimatterReactor);
+
+  // The full Interstellar chain produces end-to-end.
+  fresh();
+  E.state.unlocked.starScoop = true; E.state.machines.starScoop = 5; E.simulate(1, 1);
+  ok("Star Scoop extracts hydrogen", E.state.items.hydrogen > 4.9);
+
+  fresh();
+  E.state.unlocked.antimatterReactor = true; E.state.machines.antimatterReactor = 3;
+  E.state.items.hydrogen = 1000; E.state.items.processor = 1000; E.simulate(1, 1);
+  ok("Antimatter Reactor makes antimatter", E.state.items.antimatter > 2.9);
+
+  fresh();
+  E.state.unlocked.dysonFoundry = true; E.state.machines.dysonFoundry = 2;
+  E.state.items.antimatter = 1000; E.state.items.steel = 1000; E.state.items.circuit = 1000; E.simulate(1, 1);
+  ok("Dyson Foundry assembles Dyson Panels", E.state.items.dysonPanel > 1.9);
+
+  // currentAge reaches VII, and the age goal targets Dyson Panels.
+  fresh(); E.state.machines.dysonFoundry = 1;
+  ok("building a tier-7 machine advances to Age VII", E.currentAge() === 7);
+  ok("Age VII goal is Dyson Panels", E.AGE_GOALS[7].item === "dysonPanel");
+})();
+
+// ---------------------------------------------------------------- Age VII signature: Dyson Swarm (grid power)
+(() => {
+  fresh();
+  ok("no swarm on a fresh run", (E.state.dysonSwarm || 0) === 0 && E.dysonPower() === 0);
+  E.state.items.dysonPanel = 10;
+  E.deployDyson(4);
+  eq("deploying consumes panels into the swarm (panels)", Math.floor(E.state.items.dysonPanel), 6);
+  eq("deploying consumes panels into the swarm (swarm)", E.state.dysonSwarm, 4);
+  ok("swarm feeds the grid, scaled by generator tech", E.dysonPower() === 4 * E.DYSON_MW * E.genMult());
+  // that free power actually lands in computePower's supply
+  fresh(); E.state.dysonSwarm = 3; E.recomputeStats(); E.computePower(1);
+  ok("Dyson power lands in the grid's free supply", E.lastPower.free >= 3 * E.DYSON_MW - 1e-6);
+  // can't deploy panels you don't have
+  fresh(); E.state.items.dysonPanel = 2; E.deployDyson(10);
+  ok("can't deploy more panels than you own", E.state.dysonSwarm === 2 && (E.state.items.dysonPanel || 0) < 1e-9);
+  // the swarm is per-run (resets on Restructure, like the other signatures)
+  fresh(); E.state.dysonSwarm = 50; E.freshRun(E.state);
+  eq("swarm resets on a fresh run (per-run signature)", E.state.dysonSwarm || 0, 0);
+})();
+
+// ---------------------------------------------------------------- Age VIII: Transcendence chain (compute matter)
+(() => {
+  // Age VIII machines gate behind AGE_REQ[8] AND AGE_DM[8] (Dark Matter); Quantum Fab needs the Age VII prereq too.
+  fresh();
+  E.state.stats.bpEarned = E.AGE_REQ[7]; E.state.machines.dysonFoundry = 1; E.refreshUnlocks(true);
+  ok("Quantum Fab locked below its Blueprint gate", !E.state.unlocked.quantumFab);
+  E.state.stats.bpEarned = E.AGE_REQ[8]; E.refreshUnlocks(true);   // BP satisfied but not Dark Matter
+  ok("Age VIII still locked without Dark Matter", !E.state.unlocked.quantumFab);
+  E.state.stats.dmEarned = E.AGE_DM[8]; E.refreshUnlocks(true);   // now both gates satisfied
+  ok("Age VIII unlocks once both Blueprint AND Dark-Matter gates are met", !!E.state.unlocked.quantumFab);
+  ok("Age VIII gate is the steepest", E.AGE_REQ[8] > E.AGE_REQ[7]);
+  ok("only Age VIII is Dark-Matter gated", E.AGE_DM[8] > 0 && E.AGE_DM.slice(0, 8).every(x => x === 0));
+
+  // The full Transcendence chain produces end-to-end: Dyson Panel -> Qubit -> Simulated Matter -> Reality Shard.
+  fresh();
+  E.state.unlocked.quantumFab = true; E.state.machines.quantumFab = 3;
+  E.state.items.dysonPanel = 1000; E.state.items.processor = 1000; E.simulate(1, 1);
+  ok("Quantum Fab spins Qubits", E.state.items.qubit > 2.9);
+
+  fresh();
+  E.state.unlocked.matrioshka = true; E.state.machines.matrioshka = 2;
+  E.state.items.qubit = 1000; E.state.items.antimatter = 1000; E.simulate(1, 1);
+  ok("Matrioshka Node folds Simulated Matter", E.state.items.simMatter > 1.9);
+
+  fresh();
+  E.state.unlocked.realityCompiler = true; E.state.machines.realityCompiler = 2;
+  E.state.items.simMatter = 1000; E.state.items.aiCore = 1000; E.simulate(1, 1);
+  ok("Reality Compiler forges Reality Shards", E.state.items.realityShard > 1.9);
+
+  // currentAge reaches VIII, and the age goal targets Reality Shards.
+  fresh(); E.state.machines.realityCompiler = 1;
+  ok("building a tier-8 machine advances to Age VIII", E.currentAge() === 8);
+  ok("Age VIII goal is Reality Shards", E.AGE_GOALS[8].item === "realityShard");
+})();
+
+// ---------------------------------------------------------------- Age VIII signature: Reality Forking
+(() => {
+  fresh();
+  ok("no forks on a fresh run", (E.state.forks || 0) === 0);
+  near("forkMult is ×1 with no forks", E.forkMult(), 1);
+  ok("no fork power draw with no forks", E.forkDraw() === 0);
+  eq("first fork costs FORK_SHARD×1", E.forkCost(), E.FORK_SHARD);
+
+  // opening a fork consumes the escalating shard cost and multiplies ALL production
+  fresh();
+  E.state.items.realityShard = 100;
+  const c1 = E.forkCost();
+  E.openFork();
+  eq("opening a fork increments the fork count", E.state.forks, 1);
+  near("first fork consumed its shard cost", E.state.items.realityShard, 100 - c1);
+  near("one fork gives ×(1+FORK_GAIN) production", E.forkMult(), 1 + E.FORK_GAIN);
+  ok("second fork costs more than the first", E.forkCost() > c1);
+
+  // forkMult is an OUTER multiplier folded into globalRate
+  fresh();
+  const base = E.globalRate();
+  E.state.forks = 3;
+  near("globalRate multiplies by forkMult", E.globalRate(), base * (1 + 3 * E.FORK_GAIN));
+
+  // the k-th fork's power draw escalates (triangular total)
+  fresh();
+  E.state.forks = 4;
+  near("fork power draw is triangular (FORK_MW × f(f+1)/2)", E.forkDraw(), E.FORK_MW * (4 * 5 / 2));
+  // ...and that draw lands in the grid demand → over-forking browns out
+  fresh(); E.state.forks = 20; E.recomputeStats(); E.computePower(1);
+  ok("unfed forks brown out the whole grid", E.lastPower.ratio < 1 && E.lastPower.demand >= E.forkDraw());
+
+  // can't open a fork you can't afford
+  fresh(); E.state.items.realityShard = 0; E.openFork();
+  ok("can't fork without enough Reality Shards", (E.state.forks || 0) === 0);
+
+  // collapse frees power but does NOT refund shards
+  fresh(); E.state.items.realityShard = 100; E.openFork(); E.openFork();
+  const heldAfterOpen = E.state.items.realityShard;
+  E.collapseForks(99);
+  ok("collapse closes every fork", (E.state.forks || 0) === 0);
+  near("collapse does not refund spent shards", E.state.items.realityShard, heldAfterOpen);
+
+  // forks are per-run (reset on Restructure/freshRun, like the other structural signatures)
+  fresh(); E.state.forks = 7; E.freshRun(E.state);
+  eq("forks reset on a fresh run (per-run signature)", E.state.forks || 0, 0);
+})();
+
+// ---------------------------------------------------------------- Ascension (4th prestige = META-AUTOMATION)
+(() => {
+  fresh();
+  ok("ascension locked before the Interstellar Age", !E.ascensionUnlocked());
+  E.state.maxAge = E.ASCEND_UNLOCK_AGE;
+  ok("ascension unlocks at the Interstellar Age", E.ascensionUnlocked());
+
+  // Dark Matter gain scales with Blueprints earned this era (√)
+  fresh();
+  ok("no Dark Matter with no Blueprints", E.darkMatterAvailable() === 0);
+  E.state.stats.bpEarned = E.ASCEND_SCALE * 9;                      // √9 = 3
+  ok("Dark Matter = floor(√(bpEarned / ASCEND_SCALE))", E.darkMatterAvailable() === 3);
+
+  // Dark Matter buys AUTOMATION (not +% stats) — activating one sets its flag, costs DM, respects max
+  fresh();
+  E.state.darkMatter = 10;
+  E.upgradeDM("autoRes");
+  ok("activating an automation spends Dark Matter", E.state.darkMatter === 10 - E.dmCost(E.DM_AUTO.find(x=>x.id==="autoRes"), 0));
+  ok("automation flag is set", E.dmHas("autoRes") === true);
+  const dmMid = E.state.darkMatter; E.upgradeDM("autoRes");
+  ok("a maxed (max:1) automation can't be bought again", E.state.darkMatter === dmMid && (E.state.dmUpg.autoRes||0) === 1);
+  ok("Ascension does NOT add stat multipliers (distinct from Patents)", Math.abs(E.globalRate() - 1) < 1e-9);
+
+  // Blueprint Autopilot allocates Blueprints into the tree automatically
+  fresh();
+  E.state.blueprints = 200; E.state.allocated = { start: true };
+  E.autoAllocateBP();
+  ok("Blueprint Autopilot allocates nodes", Object.keys(E.state.allocated).length > 1 && E.state.blueprints < 200);
+
+  // Talent Autopilot spends Talent Points automatically
+  fresh();
+  E.state.talentPoints = 100;
+  E.autoBuyTalents();
+  ok("Talent Autopilot spends Talent Points", E.state.talentPoints < 100 && Object.keys(E.state.talents).length > 0);
+
+  // metaAuto runs the loops: with Auto-Restructure active + a run worth prestiging, it prestiges
+  fresh();
+  E.state.maxAge = 7; E.state.dmUpg = { autoRes: 1 }; E.state.runCredits = 1e7; E.state.lastBpGain = 0;
+  const pres0 = E.state.prestiges;
+  E.metaAuto();
+  ok("Auto-Restructure prestiges automatically when worth it", E.state.prestiges > pres0);
+
+  // persists through a save/load
+  const saved = E.defaultState(); saved.darkMatter = 5; saved.dmUpg = { autoRes: 1, headStart: 2 }; saved.ascensions = 3;
+  const loaded = E.migrate(JSON.parse(JSON.stringify(saved)));
+  ok("ascension state persists through migrate", loaded.darkMatter === 5 && loaded.dmUpg.autoRes === 1 && loaded.dmUpg.headStart === 2 && loaded.ascensions === 3);
+})();
+
+// ---------------------------------------------------------------- DM PROGRESSION SPINE: lifetime Dark Matter drives the ceiling
+(() => {
+  // ascend() accrues LIFETIME dmEarned (never spent) separately from the spendable darkMatter balance
+  fresh();
+  E.state.maxAge = 7;
+  E.ascend(4);
+  ok("ascend banks spendable Dark Matter", E.state.darkMatter === 4);
+  ok("ascend accrues lifetime dmEarned", E.state.stats.dmEarned === 4);
+  E.upgradeDM("bpAuto"); // spend some darkMatter
+  ok("spending Dark Matter does NOT reduce lifetime dmEarned (gate stays cleared)", E.state.stats.dmEarned === 4 && E.state.darkMatter < 4);
+
+  // dmEarned is the Age-VIII gate — spending the balance can't re-lock the age
+  fresh();
+  E.state.stats.bpEarned = E.AGE_REQ[8];
+  E.state.stats.dmEarned = E.AGE_DM[8]; E.state.darkMatter = 0;   // earned the gate, then spent every DM
+  E.state.machines.dysonFoundry = 1; E.refreshUnlocks(true);
+  ok("Age VIII stays unlocked on lifetime dmEarned even with 0 spendable Dark Matter", !!E.state.unlocked.quantumFab);
+
+  // migrate defaults dmEarned for old saves (no dmEarned field)
+  const old = E.defaultState(); delete old.stats.dmEarned;
+  const mig = E.migrate(JSON.parse(JSON.stringify(old)));
+  ok("migrate defaults dmEarned for legacy saves", mig.stats.dmEarned === 0);
+
+  // Ascendant Foundation: freshRun seeds a PYRAMID head-start that grows with dmEarned (cross-era progression engine)
+  fresh();
+  const noSeed = E.defaultState(); E.freshRun(noSeed);
+  const baseMiners = noSeed.machines.miner || 0;
+  E.state.stats.dmEarned = 36; E.freshRun(E.state);
+  ok("accumulated Dark Matter pre-builds a head-start factory", (E.state.machines.miner || 0) > baseMiners + 10);
+  // pyramid shape: strictly more of the lower tiers than the higher seeded tiers
+  ok("head-start is a balanced pyramid (more low-tier than high-tier machines)",
+     (E.state.machines.miner || 0) > (E.state.machines.assembler || 0) && (E.state.machines.assembler || 0) > 0);
+  // and it grows with dmEarned (more DM → bigger head-start)
+  const s10 = E.defaultState(); s10.stats.dmEarned = 10; E.freshRun(s10);
+  const s40 = E.defaultState(); s40.stats.dmEarned = 40; E.freshRun(s40);
+  ok("bigger lifetime Dark Matter → bigger head-start", (s40.machines.miner || 0) > (s10.machines.miner || 0));
+})();
+
+// ---------------------------------------------------------------- richer tree nodes (synergy + mechanic-changers)
+(() => {
+  const nodeByName = n => Object.keys(E.NODES).find(i => E.NODES[i].name === n);
+
+  // SYNERGY: "Economies of Scale" scales production with machine count
+  fresh();
+  E.state.allocated[nodeByName("Economies of Scale")] = true;   // +2% prod / 100 machines
+  E.state.machines.miner = 500; E.recomputeStats();
+  ok("prodPerMachine synergy scales with machine count", Math.abs(E.globalRate() - (1 + 0.02 * 5)) < 0.01);
+
+  // SYNERGY: "Ancestral Knowledge" scales production with age reached
+  fresh();
+  E.state.allocated[nodeByName("Ancestral Knowledge")] = true;  // +5% prod / age
+  E.state.maxAge = 6; E.recomputeStats();
+  ok("prodPerAge synergy scales with age (× above the age dividend)", E.globalRate() > 1 + 0.05 * 6);
+
+  // MECHANIC: "Frictionless Chains" (noBackpressure) — a full-output machine still consumes inputs (no stall)
+  fresh();
+  E.state.machines.ironFurnace = 5; E.state.items.ironOre = 1000; E.state.items.coal = 1000;
+  E.state.items.ironPlate = E.capOf("ironPlate");               // output full → normally throttles to 0
+  E.simulate(1, 1);
+  ok("without noBackpressure, full output stalls the machine", Math.abs(E.state.items.ironOre - 1000) < 1e-6);
+  fresh();
+  E.state.allocated[nodeByName("Frictionless Chains")] = true; E.recomputeStats();
+  E.state.machines.ironFurnace = 5; E.state.items.ironOre = 1000; E.state.items.coal = 1000;
+  E.state.items.ironPlate = E.capOf("ironPlate");
+  E.simulate(1, 1);
+  ok("noBackpressure: full-output machine still consumes inputs (chain doesn't stall)", E.state.items.ironOre < 999);
+
+  // MECHANIC: "Autonomous Mining" (rawFree) — raw extractors ignore the power throttle
+  const oreUnder = (withRawFree) => {
+    fresh();
+    if (withRawFree) { E.state.allocated[nodeByName("Autonomous Mining")] = true; E.recomputeStats(); }
+    E.state.machines.miner = 10;                                 // tier-0 raw
+    E.state.unlocked.robotAssembler = true; E.state.machines.robotAssembler = 60;   // tier-5, huge draw → brownout
+    E.state.items.robotArm = 1e4; E.state.items.processor = 1e4; E.state.items.mechanism = 1e4;
+    E.state.items.ironOre = 0;
+    E.simulate(1, 1);
+    return E.state.items.ironOre;
+  };
+  const throttled = oreUnder(false), free = oreUnder(true);
+  ok("without rawFree, miners are power-throttled", throttled < 9.9);
+  ok("rawFree: raw extraction ignores the power throttle", free > throttled + 1);
 })();
 
 // ---------------------------------------------------------------- summary
