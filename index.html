@@ -524,7 +524,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.40.2";
+const VERSION = "0.40.3";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -1390,6 +1390,12 @@ function recipeStr(m){
    UI
    ========================================================================= */
 const el = id => document.getElementById(id);
+// Guarded DOM writes — only touch the DOM when the value actually changed. Reassigning innerHTML every frame
+// (updateUI runs ~10×/s) destroys+recreates a node's children; if a click's mousedown landed on a child that then
+// gets recreated before mouseup, the browser drops the click (you have to "spam" to hit a clean frame). These skip
+// the write when unchanged, so buttons stay clickable — and it's cheaper too.
+function setHTML(e, h){ if(e && e._h!==h){ e._h=h; e.innerHTML=h; } }
+function setText(e, t){ if(e){ t=""+t; if(e._t!==t){ e._t=t; e.textContent=t; } } }
 let structureDirty = true;                        // rebuild card/chip lists when unlock set changes
 let machineFilter = "all";                        // Machines panel filter: all | run | idle | prob
 let machineDense = false;                          // Machines panel density: compact rows vs full cards
@@ -1568,17 +1574,17 @@ function renderMarket(){
   const thru = state.markets>0 ? state.markets * MARKET.rate * (1+0.5*state.marketMk) * globalRate() : 0;
   const income = Math.max(0, rate.credit||0);
   const tgt = state.marketItem===MARKET_OVERSTOCK ? "⚙️ Overstock" : (ITEMS[state.marketItem]? ITEMS[state.marketItem].ic+" "+ITEMS[state.marketItem].n : "—");
-  el("marketStats").innerHTML = state.markets>0
+  setHTML(el("marketStats"), state.markets>0
     ? `<b>${fmt(state.markets)}</b> terminal${state.markets==1?"":"s"} · Mk <b>${state.marketMk}</b> · selling <b>${tgt}</b> at <b>${fmt(thru)}/s</b> · <span class="pos">≈ ${money(income)}/s</span>`
-    : `<span class="muted">No terminals yet — build one to auto-sell, or use the “$” on any resource chip.</span>`;
+    : `<span class="muted">No terminals yet — build one to auto-sell, or use the “$” on any resource chip.</span>`);
   const active = state.markets>0, over = state.marketItem===MARKET_OVERSTOCK;
   for(const id of ids){
     const bar=el("md-"+id); if(!bar) continue;
     const df=demandFactor(id), price=unitPrice(id), have=Math.floor(state.items[id]||0);
-    el("mp-"+id).textContent=money(price);
+    setText(el("mp-"+id), money(price));
     bar.style.width=Math.round(df*100)+"%";
     bar.style.background = df>0.8 ? "var(--good)" : df>0.45 ? "var(--warn)" : "var(--bad)";   // full → amber → saturated
-    el("ms-"+id).textContent=fmt(have);
+    setText(el("ms-"+id), fmt(have));
     const r=bar.closest(".mrow"); if(r){ r.classList.toggle("sel", state.marketItem===id);
       // "selling now" cue: single-item mode sells the target; overstock sells anything above the 90% keep-line.
       const selling = active && (over ? (state.items[id]||0) > capOf(id)*OVERSTOCK_KEEP : state.marketItem===id && have>0);
@@ -1592,7 +1598,7 @@ function renderContracts(){
   const show=contractsUnlocked();
   el("contractPanel").style.display = show ? "" : "none";
   if(!show) return;
-  el("contractList").innerHTML = (state.contracts||[]).map(c=>{
+  setHTML(el("contractList"), (state.contracts||[]).map(c=>{
     const it=ITEMS[c.item]; if(!it) return "";
     const have=Math.floor(state.items[c.item]||0), can=have>=c.qty;
     return `<div class="toolrow" style="align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0">
@@ -1601,7 +1607,7 @@ function renderContracts(){
       <button class="b mk" data-fulfill="${c.cid}" style="max-width:130px" ${can?"":"disabled"}>Fulfill</button>
       <button class="b" data-skip="${c.cid}" style="max-width:80px" title="Reroll this contract">Skip</button>
     </div>`;
-  }).join("") || `<div class="muted" style="padding:6px">Stocking the contract board…</div>`;
+  }).join("") || `<div class="muted" style="padding:6px">Stocking the contract board…</div>`);
 }
 // Factory health bar — whole-chain state at a glance: machine/running counts, power gauge, income, and a bottleneck alert.
 function renderFactoryHealth(){
@@ -1612,11 +1618,11 @@ function renderFactoryHealth(){
   if(ch.starved>0 && b) side=`<div class="health warn"><span class="neg">⚠ Bottleneck — ${ITEMS[b.id].ic} ${ITEMS[b.id].n} starved</span><button class="jump" data-jump="${b.id}">Find ↓</button></div>`;
   else if(ch.full>0)    side=`<div class="health warn"><span class="warn">■ ${ch.full} machine${ch.full==1?"":"s"} backed up</span><button class="jump" data-jump="__full__">Find ↓</button></div>`;
   else                  side=`<div class="health"><span class="pos">✓ chain flowing</span></div>`;
-  el("factoryHealth").innerHTML =
+  setHTML(el("factoryHealth"),
      `<div class="cell"><span class="lbl">Machines</span><b class="num">${fmt(built)}</b> <span class="muted num">· ${fmt(running)} on</span></div>`
     +`<div class="cell"><span class="lbl">Power</span><span class="num ${pct<100?'warn':'pos'}">${pct}%</span><div class="gauge"><div style="width:${Math.min(100,pct)}%;background:${pct<100?'var(--warn)':'var(--good)'}"></div></div></div>`
     +`<div class="cell"><span class="lbl">Income</span><b class="num pos">${money(income)}</b><span class="muted">/s</span></div>`
-    + side;
+    + side);
 }
 // Age-signature strip — the deployment panels collapsed to one-line chips; click a chip to expand its full controls.
 function renderSigStrip(){
@@ -1628,7 +1634,7 @@ function renderSigStrip(){
   const strip=el("sigStrip");
   if(!sigs.length){ strip.style.display="none"; return; }
   strip.style.display="";
-  strip.innerHTML=sigs.map(s=>`<div class="sigchip ${sigOpen[s.k]?'open':''}" data-sig="${s.k}"><span class="ic">${s.ic}</span>${s.nm} <b>${s.val}</b> <span class="pos">${s.bonus}</span><span class="chev">${sigOpen[s.k]?'▴':'▾'}</span></div>`).join("");
+  setHTML(strip, sigs.map(s=>`<div class="sigchip ${sigOpen[s.k]?'open':''}" data-sig="${s.k}"><span class="ic">${s.ic}</span>${s.nm} <b>${s.val}</b> <span class="pos">${s.bonus}</span><span class="chev">${sigOpen[s.k]?'▴':'▾'}</span></div>`).join(""));
 }
 function ensureGenerators(){
   const host=el("generators"); const cnt=GORDER.filter(genUnlocked).length;
@@ -1755,21 +1761,21 @@ function updateUI(){
     // pre-backpressure) plus the spare/s you're idling — so you can plan even though net ≈ 0.
     if(full){
       // Compact so it fits a fixed-width chip: red bar already signals "full", so show capacity + spare.
-      el("rate-"+id).innerHTML = pot>0.01
+      setHTML(el("rate-"+id), pot>0.01
         ? `<span class="pos">▲${fmt(pot)}/s</span>`+(spare>0.05?` <span class="warn">+${fmt(spare)} spare</span>`:` <span class="muted">full</span>`)
-        : `<span class="muted">full</span>`;
+        : `<span class="muted">full</span>`);
     } else {
       const netStr = `<b class="${net>0.01?'pos':net<-0.01?'neg':'muted'}">${net>=0?'+':''}${fmt(net)}/s</b>`;
-      el("rate-"+id).innerHTML = gp>0.01 ? `${netStr} <span class="muted">▲${fmt(gp)}/s</span>` : netStr;
+      setHTML(el("rate-"+id), gp>0.01 ? `${netStr} <span class="muted">▲${fmt(gp)}/s</span>` : netStr);
     }
-    el("cap-"+id).textContent="/ "+fmt(cap);
+    setText(el("cap-"+id), "/ "+fmt(cap));
     const bar=el("bar-"+id); bar.style.width=Math.min(100,(full?1:fill)*100)+"%";
     const chip=el("amt-"+id).parentElement;         // amt is a direct child of the chip
     chip.classList.toggle("full", full);
     // Market demand (Layer 2): show the live per-unit price and how saturated this item's market is.
     const df=demandFactor(id), price=unitPrice(id), sat=df<0.985;
     const sb=el("sell-"+id);
-    if(sb){ sb.textContent = sat ? "$▾" : "$"; sb.style.color = sat ? "var(--warn)" : "";
+    if(sb){ setText(sb, sat ? "$▾" : "$"); sb.style.color = sat ? "var(--warn)" : "";
       sb.title = `Sell all → ${money(price)}/unit`+(sat?` · market ${Math.round(df*100)}% (saturated — spread sales or wait)`:` · full price`); }
     chip.title=`making ${fmt(gp)}/s · capacity ${fmt(pot)}/s · net ${(net>=0?'+':'')+fmt(net)}/s · price ${money(price)}/unit (demand ${Math.round(df*100)}%)`;   // full detail on hover
   }
@@ -1777,9 +1783,9 @@ function updateUI(){
   for(const k of MORDER){
     if(!state.unlocked[k]) continue;
     const m=MACHINES[k], count=state.machines[k]||0;
-    el("cnt-"+k).textContent="×"+fmt(count);
-    el("mk-"+k).textContent="Mk "+(state.mk[k]||0);
-    el("rec-"+k).innerHTML=recipeStr(m);
+    setText(el("cnt-"+k), "×"+fmt(count));
+    setText(el("mk-"+k), "Mk "+(state.mk[k]||0));
+    setHTML(el("rec-"+k), recipeStr(m));
     // status + state (drives the card's coloured edge, throughput bar, and the Problems filter)
     const outId=Object.keys(m.out)[0];
     let starvedIn=false; for(const r in m.in){ if((state.items[r]||0) < m.in[r]*inputEff()*0.001) starvedIn=true; }
@@ -1790,7 +1796,7 @@ function updateUI(){
     if(sFull)         st=`<span class="warn">■ output full</span>`;
     else if(sStarved) st=`<span class="neg">⚠ starved of inputs</span>`;
     else if(count>0)  st=`<span class="muted">≈ ${fmt((m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k))}${ITEMS[outId].ic}/s</span>`;
-    el("st-"+k).innerHTML=st;
+    setHTML(el("st-"+k), st);
     const mc=el("mc-"+k);
     mc.classList.toggle("run", sRun); mc.classList.toggle("full", sFull); mc.classList.toggle("starv", sStarved);
     const fill = count>0 ? Math.min(1,(state.items[outId]||0)/capOf(outId)) : 0;   // output-buffer fill: full=backed up, low=flowing
@@ -1806,13 +1812,13 @@ function updateUI(){
     // buy button (batch-aware: respects ×1/×10/Max + component stock)
     const bp=planMachine(k, capNum()), bbom=buildBOM(k);
     const buy=el("buy-"+k); buy.disabled=bp.n<=0; buy.classList.toggle("can", bp.n>0);
-    buy.innerHTML=`Build ×${bp.n>0?bp.n:1}<small>${money(bp.n>0?bp.cost:bp.unit)}${Object.keys(bbom).length?" · "+bomStr(scaleBOM(bbom,Math.max(1,bp.n))):""}</small>`;
+    setHTML(buy,`Build ×${bp.n>0?bp.n:1}<small>${money(bp.n>0?bp.cost:bp.unit)}${Object.keys(bbom).length?" · "+bomStr(scaleBOM(bbom,Math.max(1,bp.n))):""}</small>`);
     // mk button
     const mcr=mkCredits(k), mbom=mkBOM(k), mcan=canAfford(mcr,mbom);
     const mkb=el("mkbuy-"+k); mkb.disabled=!mcan; mkb.classList.toggle("can",mcan);
-    mkb.innerHTML=`Mk ${(state.mk[k]||0)+1} <small>+50% · ${money(mcr)} · ${bomStr(mbom)}</small>`;
+    setHTML(mkb,`Mk ${(state.mk[k]||0)+1} <small>+50% · ${money(mcr)} · ${bomStr(mbom)}</small>`);
     const ab=el("autob-"+k); ab.style.display=autoOn?"":"none";
-    if(autoOn){ ab.classList.toggle("on",!!state.auto[k]); ab.textContent=state.auto[k]?"Auto ✓":"Auto"; }
+    if(autoOn){ ab.classList.toggle("on",!!state.auto[k]); setText(ab, state.auto[k]?"Auto ✓":"Auto"); }
   }
   // machines chrome: active filter/density chips, compact mode, hidden headers when filtering, and age-collapse chevrons
   { const filtering=machineFilter!=="all";
@@ -1829,13 +1835,13 @@ function updateUI(){
   el("whMult").textContent="×"+capMult().toFixed(2);
   const wp=planWarehouse(capNum());
   el("btnWarehouse").disabled=wp.n<=0; el("btnWarehouse").classList.toggle("can",wp.n>0);
-  el("btnWarehouse").innerHTML=`Build Warehouse ×${wp.n>0?wp.n:1}<small>${money(wp.n>0?wp.cost:wp.unit)} · ${bomStr(scaleBOM(WAREHOUSE.bom,Math.max(1,wp.n)))}</small>`;
+  setHTML(el("btnWarehouse"),`Build Warehouse ×${wp.n>0?wp.n:1}<small>${money(wp.n>0?wp.cost:wp.unit)} · ${bomStr(scaleBOM(WAREHOUSE.bom,Math.max(1,wp.n)))}</small>`);
   const mp=planMarket(capNum());
   el("btnMarket").disabled=mp.n<=0; el("btnMarket").classList.toggle("can",mp.n>0);
-  el("btnMarket").innerHTML=`Build Trade Terminal ×${mp.n>0?mp.n:1}<small>${money(mp.n>0?mp.cost:mp.unit)} · ${bomStr(scaleBOM(MARKET.bom,Math.max(1,mp.n)))}</small>`;
+  setHTML(el("btnMarket"),`Build Trade Terminal ×${mp.n>0?mp.n:1}<small>${money(mp.n>0?mp.cost:mp.unit)} · ${bomStr(scaleBOM(MARKET.bom,Math.max(1,mp.n)))}</small>`);
   const mmc=marketMkCredits(), mmb=marketMkBOM(), mmcan=canAfford(mmc,mmb);
   el("btnMarketMk").disabled=!mmcan||state.markets<1; el("btnMarketMk").classList.toggle("can",mmcan&&state.markets>0);
-  el("btnMarketMk").innerHTML=`Upgrade Terminal Mk ${state.marketMk+1}<small>${money(mmc)} · ${bomStr(mmb)}</small>`;
+  setHTML(el("btnMarketMk"),`Upgrade Terminal Mk ${state.marketMk+1}<small>${money(mmc)} · ${bomStr(mmb)}</small>`);
 
   // power (header + Power tab) + generators
   const pr=lastPower;
@@ -1854,11 +1860,11 @@ function updateUI(){
     el("gcnt-"+k).textContent="×"+fmt(state.generators[k]||0);
     const g=GENERATORS[k], gp=planGenerator(k, capNum());
     const gb=el("gbuy-"+k); gb.disabled=gp.n<=0; gb.classList.toggle("can",gp.n>0);
-    gb.innerHTML=`Build ×${gp.n>0?gp.n:1}<small>${money(gp.n>0?gp.cost:gp.unit)} · ${bomStr(scaleBOM(g.build.bom,Math.max(1,gp.n)))}</small>`;
+    setHTML(gb,`Build ×${gp.n>0?gp.n:1}<small>${money(gp.n>0?gp.cost:gp.unit)} · ${bomStr(scaleBOM(g.build.bom,Math.max(1,gp.n)))}</small>`);
     if(g.fuel){ const out=(state.generators[k]||0)>0 && (state.items.coal||0)<0.001;
-      el("gst-"+k).innerHTML = out?`<span class="neg">⚠ out of Coal — no power</span>`:""; }
+      setHTML(el("gst-"+k), out?`<span class="neg">⚠ out of Coal — no power</span>`:""); }
     const gab=el("gautob-"+k); gab.style.display=autoOn?"":"none";
-    if(autoOn){ gab.classList.toggle("on",!!state.auto["gen:"+k]); gab.textContent=state.auto["gen:"+k]?"Auto ✓":"Auto"; }
+    if(autoOn){ gab.classList.toggle("on",!!state.auto["gen:"+k]); setText(gab, state.auto["gen:"+k]?"Auto ✓":"Auto"); }
   }
   // generator unlock hint (so the Power tab isn't a confusing empty panel)
   const gLocked=GORDER.filter(k=>!genUnlocked(k)), gh=el("genHint");
@@ -1875,7 +1881,7 @@ function updateUI(){
       el("accCharge").textContent=fmt(state.charge||0)+" / "+fmt(cap)+" MWh";
       const f=el("accFill"); f.style.width=(cap>0?Math.min(100,(state.charge||0)/cap*100):0)+"%"; f.style.background="var(--t3)";
       const ap=planAccumulator(capNum()); const b=el("buildAcc"); b.disabled=ap.n<=0; b.classList.toggle("can",ap.n>0);
-      b.innerHTML=`Build Accumulator ×${ap.n>0?ap.n:1}<small>+${ACCUMULATOR.cap*Math.max(1,ap.n)} MWh · ${money(ap.n>0?ap.cost:ap.unit)} · ${bomStr(scaleBOM(ACCUMULATOR.bom,Math.max(1,ap.n)))}</small>`;
+      setHTML(b,`Build Accumulator ×${ap.n>0?ap.n:1}<small>+${ACCUMULATOR.cap*Math.max(1,ap.n)} MWh · ${money(ap.n>0?ap.cost:ap.unit)} · ${bomStr(scaleBOM(ACCUMULATOR.bom,Math.max(1,ap.n)))}</small>`);
       el("accHint").innerHTML=`${fmt(state.accumulators||0)} built · <span class="pos">+${Math.round(accBonus()*100)}% production</span> from banked energy`;
     } }
   // master Auto-Build toggle + Auto-Balance (Age IV)
@@ -2286,6 +2292,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.40.3","Fixed the buttons sometimes needing a few clicks to register. The screen refreshes ~10×/second, and every refresh was rebuilding each button's contents from scratch — so if your click landed in that split-second, the browser threw it away. Now the game only touches a button when something about it actually changed, so Build, Mk, Fulfill, and the rest respond on the first click. (It's lighter on your device, too.)"],
   ["0.40.2","Slimmed down the machine cards. A layout rule went missing in the last update and left the Build/Mk buttons crammed into a narrow column — they're back to a clean full-width row now. The cards are tighter all round (less padding, smaller icon), and the new status bar moved to a thin strip along the card's bottom edge instead of taking up its own row, so each machine takes noticeably less space."],
   ["0.40.1","Two more ways to tame a big machine list. A <b>Cards / Compact</b> density toggle: Compact shrinks every machine to a slim row (icon, name, count, status, one Build button) so you can see your whole factory at once. And <b>age groups now collapse</b> — click any age header (▾) to fold that whole era away and focus on the ages you're actively building."],
   ["0.40.0","A big Factory page pass to make it easier to run at a glance. (1) A new <b>health bar</b> across the top: machines built and running, a power gauge, income/s, and a live <b>bottleneck alert</b> — when the chain is starved it names the scarce item and gives you a <b>Find ↓</b> button that jumps straight to the machine that makes it. (2) The four age-signature panels (Workforce, Fleet, Swarm, Forks) are <b>collapsed into a compact chip strip</b> — each shows its key stat, and you click to expand its controls, reclaiming a screenful of scrolling. (3) The machine list gets a <b>filter</b>: All / Running / Idle / ⚠ Problems, so you jump to what needs attention. (4) Machine cards are now <b>colour-coded by state</b> — a green edge when running, amber when the output's backed up, red when starved — with a live buffer bar, and the recipe reddens whichever input is missing. Finding and fixing bottlenecks is now a glance, not a hunt."],
