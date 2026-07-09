@@ -139,22 +139,23 @@
   .treeTip{position:absolute;display:none;pointer-events:none;background:var(--card2);border:1px solid var(--border2);
     border-radius:8px;padding:7px 10px;font-size:12px;max-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:5;line-height:1.45}
 
-  .mc{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 11px;
-    display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
-  .mc .ic{font-size:24px;width:30px;text-align:center;margin-top:2px}
+  .mc{position:relative;overflow:hidden;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 11px 9px;
+    display:grid;grid-template-columns:auto 1fr;gap:9px;align-items:start}
+  .mc .ic{font-size:22px;width:28px;text-align:center;margin-top:1px}
   .mc.run .ic{animation:spin 3s linear infinite}
   .mc .name{font-weight:700;display:flex;align-items:center;gap:6px}
   .mc .mk{font-size:10px;background:var(--card2);border:1px solid var(--border2);color:var(--accent2);
     border-radius:5px;padding:0 5px;font-weight:700}
   .mc .cnt{color:var(--muted);font-weight:500}
-  .mc .rec{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .mc .rec{font-size:11.5px;color:var(--muted);margin-top:1px}
   .mc .rec .miss{color:var(--bad)}
-  .mc .st{font-size:11px;margin-top:2px}
+  .mc .st{font-size:11px;margin-top:1px}
   .mc.run{box-shadow:inset 3px 0 0 var(--good), 0 1px 3px rgba(0,0,0,.2)}          /* state-coloured left edge */
   .mc.full{box-shadow:inset 3px 0 0 var(--warn), 0 1px 3px rgba(0,0,0,.2)}
   .mc.starv{box-shadow:inset 3px 0 0 var(--bad), 0 1px 3px rgba(0,0,0,.2);border-color:color-mix(in srgb,var(--bad) 35%,var(--border))}
-  .mc .tbar{grid-column:1/-1;height:5px;background:var(--card2);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:7px}
-  .mc .tbar>div{height:100%;border-radius:4px;width:0;transition:width .2s,background .2s}
+  .mc .tbar{position:absolute;left:0;right:0;bottom:0;height:3px;background:transparent;overflow:hidden}   /* slim bottom-edge state bar — out of the layout flow */
+  .mc .tbar>div{height:100%;width:0;transition:width .2s,background .2s}
+  .mc .btns{grid-column:1/-1;display:flex;gap:7px;margin-top:6px}         /* full-width button row (was dropped in v0.40.0) */
   /* Factory health bar */
   .fhealth{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:9px 13px;margin-bottom:11px}
   .fhealth .cell .lbl{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
@@ -523,7 +524,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.40.1";
+const VERSION = "0.40.2";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -2285,6 +2286,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.40.2","Slimmed down the machine cards. A layout rule went missing in the last update and left the Build/Mk buttons crammed into a narrow column — they're back to a clean full-width row now. The cards are tighter all round (less padding, smaller icon), and the new status bar moved to a thin strip along the card's bottom edge instead of taking up its own row, so each machine takes noticeably less space."],
   ["0.40.1","Two more ways to tame a big machine list. A <b>Cards / Compact</b> density toggle: Compact shrinks every machine to a slim row (icon, name, count, status, one Build button) so you can see your whole factory at once. And <b>age groups now collapse</b> — click any age header (▾) to fold that whole era away and focus on the ages you're actively building."],
   ["0.40.0","A big Factory page pass to make it easier to run at a glance. (1) A new <b>health bar</b> across the top: machines built and running, a power gauge, income/s, and a live <b>bottleneck alert</b> — when the chain is starved it names the scarce item and gives you a <b>Find ↓</b> button that jumps straight to the machine that makes it. (2) The four age-signature panels (Workforce, Fleet, Swarm, Forks) are <b>collapsed into a compact chip strip</b> — each shows its key stat, and you click to expand its controls, reclaiming a screenful of scrolling. (3) The machine list gets a <b>filter</b>: All / Running / Idle / ⚠ Problems, so you jump to what needs attention. (4) Machine cards are now <b>colour-coded by state</b> — a green edge when running, amber when the output's backed up, red when starved — with a live buffer bar, and the recipe reddens whichever input is missing. Finding and fixing bottlenecks is now a glance, not a hunt."],
   ["0.39.2","More Trade Terminal polish. The market table now has column headers and controls: <b>Sort</b> it by Tier (production order), Value (priciest first), or A–Z, and <b>Show</b> either everything or just the goods you're actually Producing (cuts the clutter late-game). Every row gets a <b>$</b> to sell that item on the spot, and rows the terminals are actively clearing now show a green left edge — so in Overstock mode you can see at a glance exactly what's being sold."],
