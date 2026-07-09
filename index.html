@@ -150,7 +150,42 @@
   .mc .rec{font-size:11.5px;color:var(--muted);margin-top:2px}
   .mc .rec .miss{color:var(--bad)}
   .mc .st{font-size:11px;margin-top:2px}
-  .mc .btns{grid-column:1/-1;display:flex;gap:7px;margin-top:8px}
+  .mc.run{box-shadow:inset 3px 0 0 var(--good), 0 1px 3px rgba(0,0,0,.2)}          /* state-coloured left edge */
+  .mc.full{box-shadow:inset 3px 0 0 var(--warn), 0 1px 3px rgba(0,0,0,.2)}
+  .mc.starv{box-shadow:inset 3px 0 0 var(--bad), 0 1px 3px rgba(0,0,0,.2);border-color:color-mix(in srgb,var(--bad) 35%,var(--border))}
+  .mc .tbar{grid-column:1/-1;height:5px;background:var(--card2);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:7px}
+  .mc .tbar>div{height:100%;border-radius:4px;width:0;transition:width .2s,background .2s}
+  /* Factory health bar */
+  .fhealth{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:9px 13px;margin-bottom:11px}
+  .fhealth .cell .lbl{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+  .fhealth .cell b{font-size:15px}
+  .fhealth .gauge{width:104px;height:8px;background:var(--card2);border:1px solid var(--border);border-radius:5px;overflow:hidden;margin-top:2px}
+  .fhealth .gauge>div{height:100%;background:var(--good);border-radius:5px;transition:width .2s,background .2s}
+  .fhealth .health{margin-left:auto;display:flex;align-items:center;gap:9px;border-radius:9px;padding:6px 11px;border:1px solid var(--good);background:rgba(90,209,122,.10)}
+  .fhealth .health.warn{border-color:var(--bad);background:rgba(255,107,107,.11)}
+  .fhealth .health .jump{background:var(--card2);border:1px solid var(--border2);color:var(--accent2);border-radius:6px;padding:2px 9px;font-size:11px}
+  .mc.flash{outline:2px solid var(--accent);outline-offset:1px}
+  /* Signature strip (collapsed age-signatures) */
+  .sigstrip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:11px}
+  .sigchip{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:7px 11px;font-size:12.5px;cursor:pointer}
+  .sigchip:hover{border-color:var(--border2)}
+  .sigchip.open{border-color:var(--accent)}
+  .sigchip .ic{font-size:15px}
+  .sigchip .chev{color:var(--dim);font-size:10px}
+  /* Compact (dense) machine list */
+  .grid.compact{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+  .grid.compact .mc{grid-template-columns:auto 1fr auto;padding:6px 9px;gap:8px;align-items:center}
+  .grid.compact .mc .ic{font-size:17px;margin-top:0}
+  .grid.compact .mc .rec,.grid.compact .mc .tbar{display:none}
+  .grid.compact .mc .name{font-size:12px}
+  .grid.compact .mc .st{margin-top:1px}
+  .grid.compact .mc .btns{grid-column:auto;margin-top:0;flex:0 0 auto}
+  .grid.compact .mc .btns .mk,.grid.compact .mc .btns .autob{display:none}
+  .grid.compact .mc .btns .b{max-width:122px;padding:4px 8px;font-size:11px}
+  /* Collapsible age headers */
+  .tier-h[data-age]{cursor:pointer}
+  .tier-h[data-age]:hover{color:var(--txt)}
+  .tier-h .tchev{color:var(--dim);font-size:10px;margin-right:1px;flex:0 0 auto}
   .b{flex:1;border-radius:8px;padding:6px 8px;text-align:center;line-height:1.25;
     border:1px solid var(--border2);background:linear-gradient(180deg,#22304a,#1a2438);color:var(--txt)}
   .b small{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}
@@ -251,6 +286,8 @@
   <div class="ticker" id="ticker"></div>
 
   <section class="tabpane on" id="tab-factory">
+    <div class="fhealth" id="factoryHealth"></div>
+    <div class="sigstrip" id="sigStrip" style="display:none"></div>
     <div class="panel">
       <h2>🛠 Manual</h2>
       <div class="toolrow">
@@ -332,6 +369,14 @@
           <button data-mode="1">×1</button><button data-mode="10">×10</button><button data-mode="max">Max</button>
         </span>
       </h2>
+      <div class="toolrow" style="margin:-2px 0 8px">
+        <span class="buymode" id="machineFilter" style="margin-left:0">
+          <button data-mfil="all">All</button><button data-mfil="run">Running</button><button data-mfil="idle">Idle</button><button data-mfil="prob">⚠ Problems</button>
+        </span>
+        <span class="buymode" id="machineDensity" style="margin-left:auto">
+          <button data-dense="0">Cards</button><button data-dense="1">Compact</button>
+        </span>
+      </div>
       <div class="grid" id="machines"></div>
     </div>
   </section>
@@ -478,7 +523,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.39.2";
+const VERSION = "0.40.1";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -1345,6 +1390,10 @@ function recipeStr(m){
    ========================================================================= */
 const el = id => document.getElementById(id);
 let structureDirty = true;                        // rebuild card/chip lists when unlock set changes
+let machineFilter = "all";                        // Machines panel filter: all | run | idle | prob
+let machineDense = false;                          // Machines panel density: compact rows vs full cards
+const sigOpen = {};                               // which age-signature chips are expanded (workforce/fleet/dyson/fork)
+const ageCollapsed = {};                          // which age groups are collapsed in the machine list
 function resetStructureDOM(){                      // force full rebuild of dynamic lists (prestige/import/reset)
   structureDirty=true;
   el("machines").dataset.built="";
@@ -1386,7 +1435,7 @@ function ensureMachines(){
       }
       continue;
     }
-    html+=`<div class="tier-h">${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n}</div>`;
+    html+=`<div class="tier-h" data-age="${age}"><span class="tchev" id="tchev-${age}">▾</span>${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n}</div>`;
     for(const k of keys){
       const m=MACHINES[k];
       html+=`<div class="mc" id="mc-${k}">
@@ -1396,6 +1445,7 @@ function ensureMachines(){
           <div class="rec" id="rec-${k}"></div>
           <div class="st" id="st-${k}"></div>
         </div>
+        <div class="tbar"><div id="tfill-${k}"></div></div>
         <div class="btns">
           <button class="b" id="buy-${k}" data-buy="${k}"></button>
           <button class="b mk" id="mkbuy-${k}" data-mk="${k}"></button>
@@ -1552,6 +1602,33 @@ function renderContracts(){
     </div>`;
   }).join("") || `<div class="muted" style="padding:6px">Stocking the contract board…</div>`;
 }
+// Factory health bar — whole-chain state at a glance: machine/running counts, power gauge, income, and a bottleneck alert.
+function renderFactoryHealth(){
+  const built=Object.values(state.machines).reduce((a,c)=>a+c,0);
+  let running=0; for(const k of MORDER){ if((state.machines[k]||0)>0 && rate[Object.keys(MACHINES[k].out)[0]]>0.001) running++; }
+  const ch=chainHealth(), b=bottleneck(), pct=Math.round((lastPower.ratio||1)*100), income=Math.max(0,rate.credit||0);
+  let side;
+  if(ch.starved>0 && b) side=`<div class="health warn"><span class="neg">⚠ Bottleneck — ${ITEMS[b.id].ic} ${ITEMS[b.id].n} starved</span><button class="jump" data-jump="${b.id}">Find ↓</button></div>`;
+  else if(ch.full>0)    side=`<div class="health warn"><span class="warn">■ ${ch.full} machine${ch.full==1?"":"s"} backed up</span><button class="jump" data-jump="__full__">Find ↓</button></div>`;
+  else                  side=`<div class="health"><span class="pos">✓ chain flowing</span></div>`;
+  el("factoryHealth").innerHTML =
+     `<div class="cell"><span class="lbl">Machines</span><b class="num">${fmt(built)}</b> <span class="muted num">· ${fmt(running)} on</span></div>`
+    +`<div class="cell"><span class="lbl">Power</span><span class="num ${pct<100?'warn':'pos'}">${pct}%</span><div class="gauge"><div style="width:${Math.min(100,pct)}%;background:${pct<100?'var(--warn)':'var(--good)'}"></div></div></div>`
+    +`<div class="cell"><span class="lbl">Income</span><b class="num pos">${money(income)}</b><span class="muted">/s</span></div>`
+    + side;
+}
+// Age-signature strip — the deployment panels collapsed to one-line chips; click a chip to expand its full controls.
+function renderSigStrip(){
+  const sigs=[];
+  if((state.maxAge>=5)||(state.deployed>0)||((state.items.robot||0)>=1)) sigs.push({k:"workforce",ic:"🤖",nm:"Workforce",val:"×"+fmt(state.deployed||0),bonus:"+"+Math.round(workforceBonus()*100)+"%"});
+  if((state.maxAge>=6)||(state.fleet>0)||((state.items.probe||0)>=1))     sigs.push({k:"fleet",ic:"🛰️",nm:"Fleet",val:fmt(state.fleet||0),bonus:"+"+Math.round(fleetBonus()*100)+"%"});
+  if((state.maxAge>=7)||(state.dysonSwarm>0)||((state.items.dysonPanel||0)>=1)) sigs.push({k:"dyson",ic:"🔆",nm:"Swarm",val:fmt(state.dysonSwarm||0),bonus:fmt(dysonPower())+" MW"});
+  if((state.maxAge>=8)||(state.forks>0)||((state.items.realityShard||0)>=1))    sigs.push({k:"fork",ic:"🌀",nm:"Forks",val:"×"+fmt(state.forks||0),bonus:"×"+forkMult().toFixed(2)});
+  const strip=el("sigStrip");
+  if(!sigs.length){ strip.style.display="none"; return; }
+  strip.style.display="";
+  strip.innerHTML=sigs.map(s=>`<div class="sigchip ${sigOpen[s.k]?'open':''}" data-sig="${s.k}"><span class="ic">${s.ic}</span>${s.nm} <b>${s.val}</b> <span class="pos">${s.bonus}</span><span class="chev">${sigOpen[s.k]?'▴':'▾'}</span></div>`).join("");
+}
 function ensureGenerators(){
   const host=el("generators"); const cnt=GORDER.filter(genUnlocked).length;
   if(host.dataset.count==String(cnt)) return;
@@ -1614,7 +1691,7 @@ function updateUI(){
       : `<span class="muted" style="font-size:12px">· 🏆 ${g.desc}: ${fmt(Math.floor(state.stats.made[g.item]||0))}/${fmt(g.n)}</span>`; }
     el("agebar").innerHTML=`${A.ic} <b>Age ${ROMAN[ca]} — ${A.n}</b> ${goal}<span class="rec">${rec} · 🗺️ roadmap</span>`; }
   { const showWF=(state.maxAge>=5)||(state.deployed>0)||((state.items.robot||0)>=1);
-    el("workforcePanel").style.display=showWF?"":"none";
+    el("workforcePanel").style.display=(showWF&&sigOpen.workforce)?"":"none";
     if(showWF){ const avail=Math.floor(state.items.robot||0);
       el("wfDeployed").textContent=fmt(state.deployed||0);
       el("wfBonus").textContent="+"+Math.round(workforceBonus()*100)+"%";
@@ -1627,7 +1704,7 @@ function updateUI(){
       el("wfRecall").disabled=(state.deployed||0)<1;
     } }
   { const showF=(state.maxAge>=6)||(state.fleet>0)||((state.items.probe||0)>=1);
-    el("fleetPanel").style.display=showF?"":"none";
+    el("fleetPanel").style.display=(showF&&sigOpen.fleet)?"":"none";
     if(showF){ const avail=Math.floor(state.items.probe||0), fc=fleetCap(), atCap=state.fleet>=fc-1e-6 && fc>0;
       el("fleetSize").textContent=fmt(state.fleet||0);
       el("fleetCapTxt").textContent=fc>0?`/ ${fmt(fc)}`:"";
@@ -1637,7 +1714,7 @@ function updateUI(){
       el("launch1").disabled=avail<1; el("launch10").disabled=avail<1; el("launchMax").disabled=avail<1;
     } }
   { const showD=(state.maxAge>=7)||(state.dysonSwarm>0)||((state.items.dysonPanel||0)>=1);
-    el("dysonPanel").style.display=showD?"":"none";
+    el("dysonPanel").style.display=(showD&&sigOpen.dyson)?"":"none";
     if(showD){ const avail=Math.floor(state.items.dysonPanel||0);
       el("dysonSize").textContent=fmt(state.dysonSwarm||0);
       el("dysonMW").textContent=fmt(dysonPower())+" MW";
@@ -1645,7 +1722,7 @@ function updateUI(){
       el("dyson1").disabled=avail<1; el("dyson10").disabled=avail<1; el("dysonMax").disabled=avail<1;
     } }
   { const showFk=(state.maxAge>=8)||(state.forks>0)||((state.items.realityShard||0)>=1);
-    el("forkPanel").style.display=showFk?"":"none";
+    el("forkPanel").style.display=(showFk&&sigOpen.fork)?"":"none";
     if(showFk){ const cost=forkCost(), have=Math.floor(state.items.realityShard||0), canFork=have>=cost;
       el("forkCount").textContent=fmt(state.forks||0);
       el("forkMultTxt").textContent="×"+forkMult().toFixed(2);
@@ -1657,6 +1734,7 @@ function updateUI(){
       el("forkOpen").disabled=!canFork; el("forkCollapse").disabled=(state.forks||0)<1;
     } }
 
+  renderFactoryHealth(); renderSigStrip();
   ensureTicker(); ensureMachines(); renderMarket(); renderContracts(); ensureGenerators(); ensureAchievements(); ensureTalents();
   structureDirty=false;
   const autoOn = st("auto")>0;
@@ -1701,20 +1779,29 @@ function updateUI(){
     el("cnt-"+k).textContent="×"+fmt(count);
     el("mk-"+k).textContent="Mk "+(state.mk[k]||0);
     el("rec-"+k).innerHTML=recipeStr(m);
-    // status
+    // status + state (drives the card's coloured edge, throughput bar, and the Problems filter)
+    const outId=Object.keys(m.out)[0];
+    let starvedIn=false; for(const r in m.in){ if((state.items[r]||0) < m.in[r]*inputEff()*0.001) starvedIn=true; }
+    const sFull    = count>0 && (state.items[outId]||0) >= capOf(outId)-1e-6;
+    const sStarved = count>0 && !sFull && starvedIn;
+    const sRun     = count>0 && !sFull && !sStarved && rate[outId]>0.001;
     let st="";
-    if(count>0){
-      const outId=Object.keys(m.out)[0];
-      let starved=false; for(const r in m.in){ if((state.items[r]||0) < m.in[r]*inputEff()*0.001) starved=true; }
-      const full = (state.items[outId]||0) >= capOf(outId)-1e-6;
-      const thr = (m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k);
-      if(full) st=`<span class="warn">■ output full</span>`;
-      else if(starved) st=`<span class="neg">⚠ starved of inputs</span>`;
-      else st=`<span class="muted">≈ ${fmt(thr)}${ITEMS[outId].ic}/s</span>`;
-    }
-    el("st-"+k).textContent="";
+    if(sFull)         st=`<span class="warn">■ output full</span>`;
+    else if(sStarved) st=`<span class="neg">⚠ starved of inputs</span>`;
+    else if(count>0)  st=`<span class="muted">≈ ${fmt((m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k))}${ITEMS[outId].ic}/s</span>`;
     el("st-"+k).innerHTML=st;
-    el("mc-"+k).classList.toggle("run", count>0 && rate[Object.keys(m.out)[0]]>0.001);
+    const mc=el("mc-"+k);
+    mc.classList.toggle("run", sRun); mc.classList.toggle("full", sFull); mc.classList.toggle("starv", sStarved);
+    const fill = count>0 ? Math.min(1,(state.items[outId]||0)/capOf(outId)) : 0;   // output-buffer fill: full=backed up, low=flowing
+    const tf=el("tfill-"+k); tf.style.width=Math.round(fill*100)+"%";
+    tf.style.background = sFull?"var(--warn)":sStarved?"var(--bad)":"var(--good)";
+    // machine filter: All / Running / Idle / ⚠ Problems
+    let show=true;
+    if(machineFilter==="run") show=sRun;
+    else if(machineFilter==="idle") show=!sRun && !sFull && !sStarved;
+    else if(machineFilter==="prob") show=sFull || sStarved;
+    if(machineFilter==="all" && ageCollapsed[TIER_AGE[m.t]]) show=false;   // hide cards in a collapsed age group
+    mc.style.display = show ? "" : "none";
     // buy button (batch-aware: respects ×1/×10/Max + component stock)
     const bp=planMachine(k, capNum()), bbom=buildBOM(k);
     const buy=el("buy-"+k); buy.disabled=bp.n<=0; buy.classList.toggle("can", bp.n>0);
@@ -1726,6 +1813,14 @@ function updateUI(){
     const ab=el("autob-"+k); ab.style.display=autoOn?"":"none";
     if(autoOn){ ab.classList.toggle("on",!!state.auto[k]); ab.textContent=state.auto[k]?"Auto ✓":"Auto"; }
   }
+  // machines chrome: active filter/density chips, compact mode, hidden headers when filtering, and age-collapse chevrons
+  { const filtering=machineFilter!=="all";
+    for(const b of el("machineFilter").children) b.classList.toggle("on", b.dataset.mfil===machineFilter);
+    for(const b of el("machineDensity").children) b.classList.toggle("on", (b.dataset.dense==="1")===machineDense);
+    el("machines").classList.toggle("compact", machineDense);
+    el("machines").querySelectorAll(".tier-h").forEach(h=>h.style.display=filtering?"none":"");
+    el("machines").querySelectorAll(":scope > .st").forEach(s=>s.style.display=filtering?"none":"");
+    el("machines").querySelectorAll(".tier-h[data-age]").forEach(h=>{ const cv=h.querySelector(".tchev"); if(cv) cv.textContent=ageCollapsed[+h.dataset.age]?"▸":"▾"; }); }
   // advancement tree — refresh node states only while its tab is visible (cheap)
   if(el("tab-tree").classList.contains("on")) renderTree();
   // storage tab (batch-aware)
@@ -2116,6 +2211,19 @@ const SND={
 };
 // --- Session HUD: lightweight playtest instrumentation (toggle: 📊 button or ` key) ---
 let sessionStart=Date.now(), sessionClicks=0, sessionAgeTimes={};
+// Scroll to (and briefly flash) the machine behind a health-bar alert: the PRODUCER of a starved item, or the first backed-up machine.
+function jumpToMachine(target){
+  let key=null;
+  if(target==="__full__"){
+    for(const k of MORDER){ if((state.machines[k]||0)>0){ const o=Object.keys(MACHINES[k].out)[0]; if((state.items[o]||0)>=capOf(o)-1e-6){ key=k; break; } } }
+  } else {
+    for(const k of MORDER){ if(MACHINES[k].out && MACHINES[k].out[target]!==undefined){ key=k; break; } }   // the machine that makes the scarce item
+  }
+  machineFilter="all";   // clear any filter so the target card is on screen
+  updateUI();
+  const card=key&&el("mc-"+key);
+  if(card){ card.scrollIntoView({behavior:"smooth",block:"center"}); card.classList.add("flash"); setTimeout(()=>card&&card.classList.remove("flash"),1500); }
+}
 function bottleneck(){                              // the consumed item whose buffer is emptiest (downstream is starving for it)
   const consumed=new Set();
   for(const k of MORDER){ if((state.machines[k]||0)>0) for(const r in MACHINES[k].in) consumed.add(r); }
@@ -2177,6 +2285,8 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.40.1","Two more ways to tame a big machine list. A <b>Cards / Compact</b> density toggle: Compact shrinks every machine to a slim row (icon, name, count, status, one Build button) so you can see your whole factory at once. And <b>age groups now collapse</b> — click any age header (▾) to fold that whole era away and focus on the ages you're actively building."],
+  ["0.40.0","A big Factory page pass to make it easier to run at a glance. (1) A new <b>health bar</b> across the top: machines built and running, a power gauge, income/s, and a live <b>bottleneck alert</b> — when the chain is starved it names the scarce item and gives you a <b>Find ↓</b> button that jumps straight to the machine that makes it. (2) The four age-signature panels (Workforce, Fleet, Swarm, Forks) are <b>collapsed into a compact chip strip</b> — each shows its key stat, and you click to expand its controls, reclaiming a screenful of scrolling. (3) The machine list gets a <b>filter</b>: All / Running / Idle / ⚠ Problems, so you jump to what needs attention. (4) Machine cards are now <b>colour-coded by state</b> — a green edge when running, amber when the output's backed up, red when starved — with a live buffer bar, and the recipe reddens whichever input is missing. Finding and fixing bottlenecks is now a glance, not a hunt."],
   ["0.39.2","More Trade Terminal polish. The market table now has column headers and controls: <b>Sort</b> it by Tier (production order), Value (priciest first), or A–Z, and <b>Show</b> either everything or just the goods you're actually Producing (cuts the clutter late-game). Every row gets a <b>$</b> to sell that item on the spot, and rows the terminals are actively clearing now show a green left edge — so in Overstock mode you can see at a glance exactly what's being sold."],
   ["0.39.1","Trade Terminal, rebuilt around the new market. The old dropdown is gone — in its place a live market table: every sellable item as a row showing its current price-per-unit and a demand bar that's green at full price and reddens as that market saturates, plus your stock on hand. Click any row (or ⚙️ Overstock) to set what the terminals auto-sell — no more hunting a dropdown. A stats line up top shows your terminals, Mk, current target, sell rate, and live income/s. Now you can see the whole market at a glance and tell instantly which goods are oversold and which are paying full price."],
   ["0.39.0","The economy is now a real market, not a fixed-price faucet — three interlocking layers. (1) VALUE-ADD: every item's sale price is now derived from its recipe, so refining ALWAYS pays and the deeper you go the exponentially richer the good. This fixes some genuinely broken spots — a Qubit used to sell for LESS than the parts it's made from! (2) DEMAND: each item's market now has depth. Flood one item with sales and its price sags (down to 30%); it recovers over time — so spreading your sales (overstock mode, or refining deeper) keeps prices high. Every resource chip's $ shows its live price and a ▾ when its market is saturated. (3) CONTRACTS: a new 📦 board of premium buyers (under the Trade Terminal) wants specific goods and pays well above market — and fulfilling one instantly cools that item's market back down. Deliver from stock, or skip to reroll. Together: what you sell, how you spread it, and which contracts you chase are now real decisions."],
@@ -2234,7 +2344,9 @@ const CHANGELOG=[
 function wire(){
   el("btnMine").addEventListener("click",e=>{ const a=orePerClick(); mine(); floatAt(e.clientX,e.clientY,"+"+fmt(a)+" ⛏️","var(--ore)"); });
   el("ticker").addEventListener("click",e=>{ const s=e.target.closest("[data-sell]"); if(s){ const g=sellAll(s.dataset.sell); if(g>0) floatAt(e.clientX,e.clientY,"+"+money(g),"var(--good)"); } });
-  el("machines").addEventListener("click",e=>{ const a=e.target.closest("[data-auto]"),b=e.target.closest("[data-buy]"),m=e.target.closest("[data-mk]");
+  el("machines").addEventListener("click",e=>{
+    const h=e.target.closest(".tier-h[data-age]"); if(h){ const ag=+h.dataset.age; ageCollapsed[ag]=!ageCollapsed[ag]; updateUI(); return; }   // collapse/expand an age group
+    const a=e.target.closest("[data-auto]"),b=e.target.closest("[data-buy]"),m=e.target.closest("[data-mk]");
     if(a){ state.auto[a.dataset.auto]=!state.auto[a.dataset.auto]; updateUI(); }
     else if(b) buildMachine(b.dataset.buy); else if(m) mkMachine(m.dataset.mk); });
   // advancement tree: drag to pan, wheel/buttons to zoom, click to allocate, hover for tooltip
@@ -2275,6 +2387,10 @@ function wire(){
     const r=e.target.closest("[data-mkitem]"); if(r){ state.marketItem=r.dataset.mkitem; SND.click&&SND.click(); updateUI(); } });
   el("marketSort").addEventListener("click",e=>{ const b=e.target.closest("[data-msort]"); if(b){ marketSort=b.dataset.msort; updateUI(); } });
   el("marketFilter").addEventListener("click",e=>{ const b=e.target.closest("[data-mfilter]"); if(b){ marketFilterMine=b.dataset.mfilter==="mine"; updateUI(); } });
+  el("sigStrip").addEventListener("click",e=>{ const c=e.target.closest("[data-sig]"); if(c){ sigOpen[c.dataset.sig]=!sigOpen[c.dataset.sig]; updateUI(); } });
+  el("machineFilter").addEventListener("click",e=>{ const b=e.target.closest("[data-mfil]"); if(b){ machineFilter=b.dataset.mfil; updateUI(); } });
+  el("machineDensity").addEventListener("click",e=>{ const b=e.target.closest("[data-dense]"); if(b){ machineDense=b.dataset.dense==="1"; updateUI(); } });
+  el("factoryHealth").addEventListener("click",e=>{ const j=e.target.closest("[data-jump]"); if(j) jumpToMachine(j.dataset.jump); });
   el("contractList").addEventListener("click",e=>{ const f=e.target.closest("[data-fulfill]"), s=e.target.closest("[data-skip]");
     if(f) fulfillContract(+f.dataset.fulfill); else if(s) skipContract(+s.dataset.skip); });
   el("btnPrestige").addEventListener("click",doPrestige);

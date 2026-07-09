@@ -503,9 +503,17 @@ totals, **manual-click count** (an engagement proxy — near-zero late-game mean
 passive), and **per-Age pacing** (wall-clock time each Age was first reached). It's a tuning instrument,
 off by default, and reads live state without perturbing it.
 
-- **🏭 Factory** — Manual mine; a **×1/×10/Max** buy-mode toggle; a master **Auto-Build**
-  toggle (once unlocked); machines grouped by tier, each card: icon, Mk badge, count, recipe
-  (missing inputs in red), status, **Build ×N** + **Mk↑** + **Auto** buttons.
+- **🏭 Factory** (usability pass v0.40.0) — a **health bar** (`renderFactoryHealth`) across the top:
+  machines built / running, a power gauge, income/s, and a live **bottleneck alert** that names the
+  starved item with a **Find ↓** button (`jumpToMachine` → scrolls+flashes the producer's card). Below it
+  the four age-signature panels collapse into a one-line **chip strip** (`renderSigStrip`, `sigOpen`) —
+  click a chip to expand its full deploy controls. Then: Manual mine; **×1/×10/Max** buy-mode; a
+  **filter** (All / Running / Idle / ⚠ Problems via `machineFilter`); a **Cards/Compact** density toggle
+  (`machineDense` → `.grid.compact`, slim rows for the whole-factory view); a master **Auto-Build** toggle;
+  machines grouped by age with **collapsible age headers** (`ageCollapsed`, click a `.tier-h[data-age]` to
+  fold an era), each card **colour-coded by state** (green running / amber output-full / red starved via
+  `.run`/`.full`/`.starv`) with a live output-buffer bar, icon, Mk badge, count, recipe (missing inputs in
+  red), status, **Build ×N** + **Mk↑** + **Auto** buttons.
 - **⚡ Power** — grid supply/demand/load bar; generator build cards (Build + Auto).
 - **📦 Storage & Trade** — Warehouses; Trade Terminal build/upgrade + sell-target select.
 - **🌳 Advancements** — the pan/zoom passive tree; click nodes to allocate Blueprints.
