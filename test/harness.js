@@ -25,6 +25,9 @@ const fake = new Proxy(function () {}, {
 const EXPORTS = [
   "VERSION", "PRESTIGE_SCALE", "TP_SCALE", "BASE_GRID", "DRAW",
   "ITEMS", "MACHINES", "MORDER", "GENERATORS", "GORDER", "WAREHOUSE", "MARKET", "MARKET_OVERSTOCK", "OVERSTOCK_KEEP",
+  "VALUE_MARKUP", "deriveSellValues",
+  "DEMAND_FLOOR", "DEMAND_DEPTH_K", "DEMAND_REGEN", "demandDepth", "demandFactor", "unitPrice", "sellValue", "demandSat",
+  "CONTRACT_SLOTS", "CONTRACT_PREMIUM", "CONTRACT_QTY", "genContract", "refillContracts", "fulfillContract", "skipContract", "contractsUnlocked",
   "START_MACHINES", "START_ITEMS", "NODES", "EDGES", "MILESTONES", "TALENTS", "TIER_REQ",
   "defaultState", "freshRun", "migrate",
   "recomputeStats", "st",

@@ -143,6 +143,44 @@ remain for bootstrap.
 
 ---
 
+## 6a. The Market — economy depth (v0.39.0)
+
+Selling used to be a fixed-price faucet (dump any quantity at a static price, forever). It's now a market
+with three interlocking layers — the flattest system in the game brought up to the depth of the power side.
+
+**Layer 1 — Value-Add Gradient (`deriveSellValues`, `VALUE_MARKUP`=1.8).** Prices are no longer hand-set;
+each item's `sell` is **derived from its primary recipe**: `sell = (Σ input values) × MARKUP` per output unit.
+Raw extractables (machines with no inputs) keep a hand-set base — the seeds of the curve. Runs once at load
+over `MORDER` (raw→finished, so inputs are always priced before outputs). *Why:* the old hand-set values had
+drifted into **negative markups** — Iron Plate paid exactly its ore (1.0×), Processor 0.74×, Qubit 0.66× (a
+Qubit sold for *less* than the Panels+Processors it consumed), so the chain actively punished refining and the
+top plateaued. Now every step is a clean 1.8× and deeper = exponentially richer; one knob tunes the whole curve.
+
+**Layer 2 — Demand Depth (`demandSat`, `sellValue`, `demandFactor`).** Each item's market has a **saturation**
+∈ [0,1] (module-level runtime state, reset each Restructure). Selling raises it (`+qty/demandDepth`, depth ∝
+storage cap); it **decays proportionally** each tick (`×(1−DEMAND_REGEN·dt)`), so the price sag is *proportional
+to how hard you push an item*. Effective price = base × `demandFactor` = base × `[DEMAND_FLOOR(0.3) … 1]`. A big
+sale is priced at the **average** factor across the sat range it traverses (a linear marginal-sag approximation).
+*Effect:* dumping one good sinks its price to the floor; spreading sales — the overstock terminal does this
+automatically, fullest-first — keeps every market near full value. Surfaced on each resource chip: the "$" shows
+the live `$/unit` and turns to **"$▾"** (warn colour) when saturated.
+
+**Layer 3 — Contracts (`state.contracts`, `CONTRACT_SLOTS`=3).** A board of **premium buyers** under the Trade
+Terminal (unlocked once `markets>0` or you've prestiged). Each contract wants a `qty` (≈0.6–1.6× the item's cap)
+of one item and pays `qty × baseValue × premium` (2–4×) — well above market. Fulfilling from stock consumes the
+goods, pays the reward, **and resets that item's `demandSat`** (the buyer absorbed the glut → the market cools
+right down). Board auto-refills to 3 distinct items; `Skip` rerolls one. *Interlock:* contracts are the demand
+**spikes** riding on Layers 1–2 — a moving "best thing to make right now" that rewards a flexible factory and
+doubles as a demand-management tool (route a saturated glut into a contract instead of the sagging market).
+
+**Balance:** Layer 1 raised income (top prices ~2.5×), Layer 2 pulled it back down and *lengthened* the narrow
+top-end (its few markets saturate) — the two roughly offset, so `test/pace.js` pacing held near baseline (era 1
+~12h, push-to-VIII 1.9h→6.1h). Contracts are optional active income **not** modelled by the sims (rewards kept
+modest). The one knob per layer — `VALUE_MARKUP`, `DEMAND_FLOOR`/`REGEN`/`DEPTH_K`, `CONTRACT_PREMIUM`/`QTY` —
+are the dials; final feel needs human playtest.
+
+---
+
 ## 7. Power (electricity)
 
 A cross-cutting throttle. Every machine **draws power**; if supply can't meet demand, the

@@ -14,9 +14,9 @@ const RESERVE = 40;
 function sellSurplus() {
   const consumed = new Set();
   for (const k of E.MORDER) if ((E.state.machines[k] || 0) > 0) for (const r in E.MACHINES[k].in) consumed.add(r);
-  for (const id in E.ITEMS) { if (!E.itemUnlocked(id) || consumed.has(id)) continue; const q = (E.state.items[id] || 0) - RESERVE; if (q > 0) { E.addCredits(q * E.ITEMS[id].sell * E.marketMult()); E.state.items[id] = RESERVE; } }
+  for (const id in E.ITEMS) { if (!E.itemUnlocked(id) || consumed.has(id)) continue; const q = (E.state.items[id] || 0) - RESERVE; if (q > 0) { E.addCredits(E.sellValue(id, q)); E.state.items[id] = RESERVE; } }
 }
-function sellAll(id) { const a = E.state.items[id] || 0; if (a > 0) { E.addCredits(a * E.ITEMS[id].sell * E.marketMult()); E.state.items[id] = 0; } }
+function sellAll(id) { const a = E.state.items[id] || 0; if (a > 0) { E.addCredits(E.sellValue(id, a)); E.state.items[id] = 0; } }
 function strategize() {
   const s = E.state;
   if ((s.machines.ironFurnace || 0) > 0) sellSurplus(); else sellAll("ironOre");

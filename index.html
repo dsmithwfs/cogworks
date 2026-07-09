@@ -78,6 +78,28 @@
   .chip.full .bar{background:var(--bad)}
   .chip .cap{color:var(--dim);font-weight:400;font-size:11px;flex-shrink:0}
 
+  /* Trade Terminal market table (Layer 2 demand made visible) */
+  .mtable{display:flex;flex-direction:column;gap:3px;max-height:340px;overflow-y:auto;margin-top:4px;
+    border:1px solid var(--border);border-radius:9px;padding:5px;background:var(--card)}
+  .mgrid{display:grid;grid-template-columns:18px 1fr 74px 62px 52px 22px;align-items:center;gap:8px}
+  .mhdr{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px 4px}
+  .mhdr .r{text-align:right}
+  .mrow{padding:5px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;font-size:12.5px}
+  .mrow:hover{background:var(--card2);border-color:var(--border2)}
+  .mrow.sel{background:color-mix(in srgb,var(--accent) 15%,transparent);border-color:var(--accent)}
+  .mrow.selling{box-shadow:inset 3px 0 0 var(--good)}                 /* the terminal is actively clearing this item */
+  .mrow .mnm{font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mrow.sel .mnm{color:var(--accent2)}
+  .mrow .mprice{text-align:right;font-family:var(--mono);font-size:11.5px}
+  .mrow .mstock{text-align:right;color:var(--dim);font-family:var(--mono);font-size:11px}
+  .mrow .msell{text-align:center;color:var(--dim);border:1px solid var(--border2);border-radius:5px;font-size:12px;line-height:16px}
+  .mrow .msell:hover{color:var(--accent2);border-color:var(--accent)}
+  .mrow.overstock{display:grid;grid-template-columns:18px 1fr auto;font-weight:600}
+  .dbar{height:7px;border-radius:5px;background:var(--card2);overflow:hidden;border:1px solid var(--border)}
+  .dbar>div{height:100%;border-radius:5px;transition:width .18s,background .18s}
+  .mbar{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:6px 0 2px}
+  .mbar .lbl{color:var(--dim);font-size:11px;margin-right:2px}
+
   .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
   .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
     margin-bottom:10px;display:flex;align-items:center;gap:8px}
@@ -350,16 +372,26 @@
       </div>
     </div>
     <div class="panel" id="marketPanel">
-      <h2>💹 Trade Terminal</h2>
-      <p class="muted" style="margin:0 0 8px">Build a Trade Terminal to auto-sell for Credits — pick one resource, or <b>⚙️ Sell overstock</b> to auto-clear whatever's piling up (surplus above 90% of each cap, fullest first). Higher Mk = faster selling.</p>
-      <div class="row2" style="max-width:520px">
-        <button class="b mk" id="btnMarket">Build Trade Terminal<small id="marketCost"></small></button>
-        <select id="marketSel"></select>
+      <h2>💹 Trade Terminal <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— auto-sells for Credits. Markets have <b>demand</b>: flooding one item drops its price (to 30%) and recovers over time, so spreading sales keeps prices high.</span></h2>
+      <div class="toolrow">
+        <button class="b mk" id="btnMarket" style="max-width:260px">Build Trade Terminal<small id="marketCost"></small></button>
+        <button class="b mk" id="btnMarketMk" style="max-width:230px">Upgrade Terminal Mk<small id="marketMkCost"></small></button>
       </div>
-      <div class="kv" style="margin-top:8px"><span>Terminals</span><b id="marketCount">0</b> <span>· Mk</span><b id="marketMk">0</b></div>
-      <div class="toolrow" style="margin-top:6px">
-        <button class="b mk" id="btnMarketMk" style="max-width:220px">Upgrade Terminal Mk<small id="marketMkCost"></small></button>
+      <div id="marketStats" style="margin:6px 0 2px;font-size:12.5px"></div>
+      <div class="mbar">
+        <span class="lbl">Sort</span>
+        <span class="buymode" id="marketSort"><button data-msort="tier">Tier</button><button data-msort="value">Value</button><button data-msort="az">A–Z</button></span>
+        <span class="lbl" style="margin-left:8px">Show</span>
+        <span class="buymode" id="marketFilter"><button data-mfilter="all">All</button><button data-mfilter="mine">Producing</button></span>
       </div>
+      <div class="muted" style="font-size:11.5px">Click a row to set the auto-sell target. <b>⚙️ Overstock</b> spreads across everything overflowing (best prices); <b>$</b> sells that item now. Rows the terminal is clearing are marked with a green edge.</div>
+      <div class="mhdr mgrid"><span></span><span>Item</span><span class="r">$/unit</span><span>Demand</span><span class="r">Stock</span><span></span></div>
+      <div class="mtable" id="marketTable"></div>
+    </div>
+
+    <div class="panel" id="contractPanel" style="display:none">
+      <h2>📦 Contracts <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— premium buyers. Deliver the requested goods for a payout well above market value; it also cools that item's market right down. Fulfilling from stock, or skip one to reroll it.</span></h2>
+      <div id="contractList"></div>
     </div>
   </section>
 
@@ -446,7 +478,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.38.0";
+const VERSION = "0.39.2";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -572,6 +604,28 @@ const MACHINES = {
   realityCompiler:  {n:"Reality Compiler",  ic:"🔮", t:8, rate:1, build:{cr:5e9,bom:{simMatter:15,qubit:40,aiCore:30}},       in:{simMatter:1,aiCore:1},      out:{realityShard:1}, mkItem:"realityShard", unlock:{matrioshka:1}},
 };
 const MORDER = Object.keys(MACHINES);          // already in raw->finished order
+
+// ── Economy Layer 1: the VALUE-ADD GRADIENT ──────────────────────────────────
+// Every processing step must PAY. Instead of hand-setting prices (which drifted into negative markups — e.g. a
+// Qubit used to sell for LESS than the Panels+Processors it consumes), each item's sale value is DERIVED from its
+// primary recipe: sell = (summed value of its inputs) × VALUE_MARKUP, per output unit. Raw extractables (machines
+// with no inputs) keep the hand-set base above — those are the seeds of the whole curve. Result: a clean, monotonic
+// value-add gradient (refining always beats dumping the inputs; the deeper you go, the exponentially richer the
+// good), and any new item auto-prices itself. One knob — VALUE_MARKUP — tunes the steepness of the entire economy.
+const VALUE_MARKUP = 1.8;
+function deriveSellValues(){
+  const done = {};
+  for(const key of MORDER){ const m = MACHINES[key];
+    for(const outId in m.out){
+      if(done[outId]) continue;                                     // price each item once, from its first (primary) recipe
+      if(!m.in || !Object.keys(m.in).length){ done[outId] = true; continue; }   // raw extractor → keep hand-set base
+      let inVal = 0; for(const r in m.in) inVal += m.in[r] * (ITEMS[r].sell || 0);
+      ITEMS[outId].sell = Math.round(inVal * VALUE_MARKUP / m.out[outId] * 100) / 100;
+      done[outId] = true;
+    }
+  }
+}
+deriveSellValues();                                                 // MORDER is raw→finished, so inputs are always priced before outputs
 const START_MACHINES = ["miner","coalDrill","ironFurnace"];
 const START_ITEMS = ["ironOre","coal","ironPlate"];
 
@@ -804,6 +858,45 @@ const MARKET = {base:2000, mult:1.18, bom:{ironPlate:10,gear:10}, rate:2}; // se
 const MARKET_OVERSTOCK = "__overstock__";          // sentinel marketItem: auto-sell surplus instead of one resource
 const OVERSTOCK_KEEP = 0.9;                         // overstock mode leaves this fraction of each cap as working stock
 
+// ── Economy Layer 3: CONTRACTS (demand spikes) ───────────────────────────────
+// A board of premium buyers: each contract wants a QUANTITY of one item and pays a big premium over market value.
+// Fulfilling one is strictly better than dumping into the (saturating) market — it pays a fixed premium AND cools
+// down that item's market (resets its saturation, since the buyer absorbed the glut). Contracts are the demand
+// SPIKES riding on top of Layers 1–2: a moving "best thing to make right now" that rewards a flexible factory.
+const CONTRACT_SLOTS = 3;                            // how many contracts sit on the board at once
+const CONTRACT_PREMIUM = [2.0, 4.0];                 // reward = qty × base value × (random premium in this range)
+const CONTRACT_QTY = [0.6, 1.6];                     // qty ≈ (random in this range) × the item's storage cap
+let contractSeq = 0;
+function genContract(){
+  const pool = Object.keys(ITEMS).filter(id => itemUnlocked(id) && !state.contracts.some(c=>c.item===id));
+  if(!pool.length) return null;
+  // Weight toward items you actually produce and toward higher value (more interesting than dumping raw ore).
+  const id = pool[Math.floor(Math.random()*pool.length)];
+  const cap = ITEMS[id].cap;
+  const qty = Math.max(5, Math.round(cap * (CONTRACT_QTY[0] + Math.random()*(CONTRACT_QTY[1]-CONTRACT_QTY[0]))));
+  const prem = CONTRACT_PREMIUM[0] + Math.random()*(CONTRACT_PREMIUM[1]-CONTRACT_PREMIUM[0]);
+  const reward = Math.round(qty * ITEMS[id].sell * prem);
+  return {cid:++contractSeq, item:id, qty, reward};
+}
+function refillContracts(){
+  if(!state.contracts) state.contracts=[];
+  let guard=0;
+  while(state.contracts.length < CONTRACT_SLOTS && guard++ < 20){ const c=genContract(); if(!c) break; state.contracts.push(c); }
+}
+function fulfillContract(cid){
+  const i=state.contracts.findIndex(c=>c.cid===cid); if(i<0) return;
+  const c=state.contracts[i]; if((state.items[c.item]||0) < c.qty) return;
+  state.items[c.item]-=c.qty; addCredits(c.reward);
+  demandSat[c.item]=0;                               // the buyer absorbed the glut — this market cools right down
+  state.contracts.splice(i,1); refillContracts();
+  SND.goal(); toast(`📦 Contract filled — ${fmt(c.qty)} ${ITEMS[c.item].n} → ${money(c.reward)}`, "unlock"); updateUI();
+}
+function skipContract(cid){
+  const i=state.contracts.findIndex(c=>c.cid===cid); if(i<0) return;
+  state.contracts.splice(i,1); refillContracts(); updateUI();
+}
+const contractsUnlocked = () => (state.markets||0) > 0 || (state.prestiges||0) > 0;   // available once you're trading
+
 // Power — a cross-cutting constraint. Machines draw power (by tier, scaled by Mk);
 // generators supply it. Under-supply throttles the WHOLE factory proportionally.
 const BASE_GRID = 200;                             // free MW — covers early/mid game; power bites once you scale big
@@ -865,6 +958,7 @@ function defaultState(){
     auto:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
     fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
+    contracts:[],          // Economy Layer 3: the premium-buyer contract board
     darkMatter:0, dmUpg:{}, ascensions:0};   // Ascension layer (4th prestige): cosmic currency + permanent upgrades
   freshRun(s);
   return s;
@@ -879,6 +973,14 @@ const potRate = {};                               // smoothed POTENTIAL output/s
 for(const k in ITEMS) potRate[k]=0;
 const potMade = {};                               // cumulative potential output (module-level counter; diffed per tick)
 for(const k in ITEMS) potMade[k]=0;
+// ── Economy Layer 2: MARKET DEMAND DEPTH ─────────────────────────────────────
+// Each item's market has a SATURATION (0 = fresh, full price; 1 = flooded, floor price). Selling raises it;
+// it decays proportionally over time (so the sag is proportional to how hard you push an item — dump one good
+// and its price sinks toward the floor; spread your sales, or run an overstock terminal, and every market stays
+// near full value). Reset each Restructure (a fresh market per run). demandSat is module-level runtime state
+// (like rate/prodRate), not saved — it re-equilibrates within seconds anyway.
+const demandSat = {};
+for(const k in ITEMS) demandSat[k]=0;
 
 /* =========================================================================
    DERIVED MULTIPLIERS
@@ -908,6 +1010,21 @@ const inputEff     = () => Math.max(0.4, 1 - st("input"));
 const rawEff       = () => Math.max(0.2, 1 - st("rawcost"));   // extra reduction on tier-0 (raw) inputs
 const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
 const marketMult   = () => 1 + st("sell") + st("sellPerItem")*unlockedItemCount();   // SYNERGY node: +sale value per unlocked item
+// Market demand (Layer 2). DEMAND_FLOOR = worst price when a market is fully flooded; DEPTH_K scales how much you
+// can sell before it saturates (∝ storage cap — abundant goods have deep markets); REGEN = proportional recovery/s.
+const DEMAND_FLOOR = 0.3, DEMAND_DEPTH_K = 3, DEMAND_REGEN = 0.05;
+const demandDepth  = id => ITEMS[id].cap * DEMAND_DEPTH_K;
+const demandFactor = id => DEMAND_FLOOR + (1-DEMAND_FLOOR)*(1 - Math.min(1, demandSat[id]||0));   // price multiplier ∈ [FLOOR, 1]
+const unitPrice    = id => ITEMS[id].sell * marketMult() * demandFactor(id);                       // live per-unit sale value
+// Sell `qty` of an item: prices it at the AVERAGE demand factor across the sat range the sale traverses (a linear
+// approximation of the marginal price sag), then raises that market's saturation. Returns the credits earned.
+function sellValue(id, qty){
+  if(qty<=0) return 0;
+  const s0 = demandSat[id]||0, s1 = Math.min(1, s0 + qty/demandDepth(id));
+  const avg = DEMAND_FLOOR + (1-DEMAND_FLOOR)*(1 - (s0+s1)/2);
+  demandSat[id] = s1;
+  return qty * ITEMS[id].sell * marketMult() * avg;
+}
 const buildDiscount= () => Math.max(0.4, 1 - st("build"));
 const mkDiscount   = () => Math.max(0.4, 1 - st("mkcost"));
 const offlineEff   = () => Math.min(1, 0.5 + st("offeff"));
@@ -1071,11 +1188,13 @@ function computePower(dt){
   return ratio;
 }
 function simulate(dt, eff){
-  const gr = globalRate(), ie = inputEff(), re = rawEff(), mm = marketMult();
+  const gr = globalRate(), ie = inputEff(), re = rawEff();
   const inF = r => m.in[r] * ie * (ITEMS[r].t===0 ? re : 1) * ocInput();   // per-input amount (raw cut; overclock burns more)
   const pr = computePower(dt);                       // power throttles every consumer proportionally
   const rawFree = st("rawFree")>0;                   // MECHANIC node: raw extractors ignore the grid
   const noBP = st("noBackpressure")>0;               // MECHANIC node: machines don't throttle on full buffers (overflow discarded)
+  const decay = Math.max(0, 1 - DEMAND_REGEN*dt);    // markets recover toward full price (Layer 2 demand depth)
+  for(const id in demandSat){ if(demandSat[id]>1e-4) demandSat[id]*=decay; else demandSat[id]=0; }
   var m;
   for(const key of MORDER){
     if(!state.unlocked[key]) continue;
@@ -1105,10 +1224,10 @@ function simulate(dt, eff){
         if(excess>1e-9) over.push({id, excess, fill:(state.items[id]||0)/capOf(id)}); }
       over.sort((a,b)=>b.fill-a.fill);              // relieve the most-backed-up buffers first
       for(const o of over){ if(budget<=1e-9) break; const q=Math.min(budget, o.excess);
-        state.items[o.id]-=q; addCredits(q*ITEMS[o.id].sell*mm); budget-=q; }
+        state.items[o.id]-=q; addCredits(sellValue(o.id, q)); budget-=q; }   // spread selling → each market stays near full price
     } else if(state.marketItem && ITEMS[state.marketItem]){
       const cyc = Math.min(thru, state.items[state.marketItem]||0) * eff;
-      if(cyc>0){ state.items[state.marketItem]-=cyc; addCredits(cyc*ITEMS[state.marketItem].sell*mm); }
+      if(cyc>0){ state.items[state.marketItem]-=cyc; addCredits(sellValue(state.marketItem, cyc)); }   // hammering one item saturates its market
     }
   }
 }
@@ -1174,6 +1293,7 @@ function tick(){
   refreshUnlocks(false);
   checkMilestones();
   checkAgeGoals();
+  if(contractsUnlocked()) refillContracts();   // keep the contract board stocked (Layer 3)
   grantTP();
   const _age=currentAge();
   if(_age>(state.age||1)){ const first=_age>(state.maxAge||1); state.age=_age; if(first){ state.maxAge=_age; recomputeStats(); } onNewAge(_age, first); }
@@ -1229,7 +1349,7 @@ function resetStructureDOM(){                      // force full rebuild of dyna
   structureDirty=true;
   el("machines").dataset.built="";
   el("ticker").innerHTML="";
-  el("marketSel").dataset.count="";
+  el("marketTable").dataset.sig="";
   el("generators").dataset.count="";
 }
 function ensureTicker(){
@@ -1239,7 +1359,7 @@ function ensureTicker(){
     const it=ITEMS[id]; const d=document.createElement("div"); d.className="chip"; d.dataset.id=id;
     d.style.borderColor=`color-mix(in srgb, var(--t${it.t}) 30%, var(--border))`;
     d.innerHTML=`<div class="h"><span class="ic">${it.ic}</span><span class="nm">${it.n}</span>
-      <span class="sell" data-sell="${id}" title="Sell all for Credits">$</span></div>
+      <span class="sell" id="sell-${id}" data-sell="${id}" title="Sell all for Credits">$</span></div>
       <div class="v num" id="amt-${id}">0</div>
       <div class="r"><span id="rate-${id}"></span> <span class="cap" id="cap-${id}"></span></div>
       <div class="bar" id="bar-${id}"></div>`;
@@ -1362,13 +1482,75 @@ function renderTree(){
   const total=Object.keys(NODES).length-1, got=Object.keys(state.allocated).filter(k=>k!=="start"&&state.allocated[k]).length;
   const ct=el("treeCount"); if(ct) ct.textContent=`${got}/${total} nodes · 📐 ${fmt(state.blueprints)}`;
 }
-function ensureMarketSel(){
-  const sel=el("marketSel");
-  const want=Object.keys(ITEMS).filter(itemUnlocked);
-  if(sel.dataset.count==String(want.length)) return;
-  sel.innerHTML=`<option value="${MARKET_OVERSTOCK}">⚙️ Sell overstock (auto)</option>`
-    + want.map(id=>`<option value="${id}">${ITEMS[id].ic} ${ITEMS[id].n} — ${money(ITEMS[id].sell)}</option>`).join("");
-  sel.value=state.marketItem; sel.dataset.count=String(want.length);
+let marketSort = "tier";       // "tier" (chain order) | "value" (base price high→low) | "az"
+let marketFilterMine = false;  // Producing-only filter
+// The visible, sorted list of item ids for the market table.
+function marketVisibleIds(){
+  let ids=Object.keys(ITEMS).filter(itemUnlocked);
+  if(marketFilterMine){
+    const producing=new Set();
+    for(const k of MORDER){ if((state.machines[k]||0)>0) for(const o in MACHINES[k].out) producing.add(o); }
+    ids=ids.filter(id=>producing.has(id) || (state.items[id]||0)>0.001);
+  }
+  if(marketSort==="value") ids.sort((a,b)=>ITEMS[b].sell-ITEMS[a].sell);
+  else if(marketSort==="az") ids.sort((a,b)=>ITEMS[a].n.localeCompare(ITEMS[b].n));
+  // "tier" keeps ITEMS insertion order (raw→finished)
+  return ids;
+}
+// Rebuild the rows only when the visible set / order actually changes (sort/filter/unlock) — values update live below.
+function ensureMarketTable(ids){
+  const host=el("marketTable"); const sig=marketSort+"|"+(marketFilterMine?"m":"a")+"|"+ids.join(",");
+  if(host.dataset.sig===sig) return;
+  host.innerHTML =
+    `<div class="mrow overstock" data-mkitem="${MARKET_OVERSTOCK}"><span>⚙️</span><span class="mnm">Sell overstock (auto)</span><span class="muted" style="font-size:11px">spreads · best price</span></div>`
+    + ids.map(id=>{ const it=ITEMS[id];
+        return `<div class="mrow mgrid" data-mkitem="${id}"><span>${it.ic}</span><span class="mnm">${it.n}</span>`
+          + `<span class="mprice" id="mp-${id}"></span><div class="dbar"><div id="md-${id}"></div></div>`
+          + `<span class="mstock" id="ms-${id}"></span><span class="msell" data-msell="${id}" title="Sell all now">$</span></div>`;
+      }).join("");
+  host.dataset.sig=sig;
+}
+// Update the terminal stats + every visible row's live price / demand bar / stock / selection / selling-cue each frame.
+function renderMarket(){
+  const ids=marketVisibleIds();
+  ensureMarketTable(ids);
+  const thru = state.markets>0 ? state.markets * MARKET.rate * (1+0.5*state.marketMk) * globalRate() : 0;
+  const income = Math.max(0, rate.credit||0);
+  const tgt = state.marketItem===MARKET_OVERSTOCK ? "⚙️ Overstock" : (ITEMS[state.marketItem]? ITEMS[state.marketItem].ic+" "+ITEMS[state.marketItem].n : "—");
+  el("marketStats").innerHTML = state.markets>0
+    ? `<b>${fmt(state.markets)}</b> terminal${state.markets==1?"":"s"} · Mk <b>${state.marketMk}</b> · selling <b>${tgt}</b> at <b>${fmt(thru)}/s</b> · <span class="pos">≈ ${money(income)}/s</span>`
+    : `<span class="muted">No terminals yet — build one to auto-sell, or use the “$” on any resource chip.</span>`;
+  const active = state.markets>0, over = state.marketItem===MARKET_OVERSTOCK;
+  for(const id of ids){
+    const bar=el("md-"+id); if(!bar) continue;
+    const df=demandFactor(id), price=unitPrice(id), have=Math.floor(state.items[id]||0);
+    el("mp-"+id).textContent=money(price);
+    bar.style.width=Math.round(df*100)+"%";
+    bar.style.background = df>0.8 ? "var(--good)" : df>0.45 ? "var(--warn)" : "var(--bad)";   // full → amber → saturated
+    el("ms-"+id).textContent=fmt(have);
+    const r=bar.closest(".mrow"); if(r){ r.classList.toggle("sel", state.marketItem===id);
+      // "selling now" cue: single-item mode sells the target; overstock sells anything above the 90% keep-line.
+      const selling = active && (over ? (state.items[id]||0) > capOf(id)*OVERSTOCK_KEEP : state.marketItem===id && have>0);
+      r.classList.toggle("selling", selling); }
+  }
+  const ov=el("marketTable").querySelector('.mrow.overstock'); if(ov) ov.classList.toggle("sel", over);
+  for(const b of el("marketSort").children) b.classList.toggle("on", b.dataset.msort===marketSort);
+  for(const b of el("marketFilter").children) b.classList.toggle("on", b.dataset.mfilter===(marketFilterMine?"mine":"all"));
+}
+function renderContracts(){
+  const show=contractsUnlocked();
+  el("contractPanel").style.display = show ? "" : "none";
+  if(!show) return;
+  el("contractList").innerHTML = (state.contracts||[]).map(c=>{
+    const it=ITEMS[c.item]; if(!it) return "";
+    const have=Math.floor(state.items[c.item]||0), can=have>=c.qty;
+    return `<div class="toolrow" style="align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0">
+      <span style="min-width:230px">${it.ic} Deliver <b>${fmt(c.qty)}</b> ${it.n} <span class="${can?'pos':'muted'}">(${fmt(have)}/${fmt(c.qty)})</span></span>
+      <span class="pos" style="min-width:120px">→ ${money(c.reward)}</span>
+      <button class="b mk" data-fulfill="${c.cid}" style="max-width:130px" ${can?"":"disabled"}>Fulfill</button>
+      <button class="b" data-skip="${c.cid}" style="max-width:80px" title="Reroll this contract">Skip</button>
+    </div>`;
+  }).join("") || `<div class="muted" style="padding:6px">Stocking the contract board…</div>`;
 }
 function ensureGenerators(){
   const host=el("generators"); const cnt=GORDER.filter(genUnlocked).length;
@@ -1475,7 +1657,7 @@ function updateUI(){
       el("forkOpen").disabled=!canFork; el("forkCollapse").disabled=(state.forks||0)<1;
     } }
 
-  ensureTicker(); ensureMachines(); ensureMarketSel(); ensureGenerators(); ensureAchievements(); ensureTalents();
+  ensureTicker(); ensureMachines(); renderMarket(); renderContracts(); ensureGenerators(); ensureAchievements(); ensureTalents();
   structureDirty=false;
   const autoOn = st("auto")>0;
 
@@ -1505,7 +1687,12 @@ function updateUI(){
     const bar=el("bar-"+id); bar.style.width=Math.min(100,(full?1:fill)*100)+"%";
     const chip=el("amt-"+id).parentElement;         // amt is a direct child of the chip
     chip.classList.toggle("full", full);
-    chip.title=`making ${fmt(gp)}/s · capacity ${fmt(pot)}/s · net ${(net>=0?'+':'')+fmt(net)}/s`;   // full detail on hover
+    // Market demand (Layer 2): show the live per-unit price and how saturated this item's market is.
+    const df=demandFactor(id), price=unitPrice(id), sat=df<0.985;
+    const sb=el("sell-"+id);
+    if(sb){ sb.textContent = sat ? "$▾" : "$"; sb.style.color = sat ? "var(--warn)" : "";
+      sb.title = `Sell all → ${money(price)}/unit`+(sat?` · market ${Math.round(df*100)}% (saturated — spread sales or wait)`:` · full price`); }
+    chip.title=`making ${fmt(gp)}/s · capacity ${fmt(pot)}/s · net ${(net>=0?'+':'')+fmt(net)}/s · price ${money(price)}/unit (demand ${Math.round(df*100)}%)`;   // full detail on hover
   }
   // machines
   for(const k of MORDER){
@@ -1550,8 +1737,6 @@ function updateUI(){
   const mp=planMarket(capNum());
   el("btnMarket").disabled=mp.n<=0; el("btnMarket").classList.toggle("can",mp.n>0);
   el("btnMarket").innerHTML=`Build Trade Terminal ×${mp.n>0?mp.n:1}<small>${money(mp.n>0?mp.cost:mp.unit)} · ${bomStr(scaleBOM(MARKET.bom,Math.max(1,mp.n)))}</small>`;
-  el("marketCount").textContent=fmt(state.markets);
-  el("marketMk").textContent=fmt(state.marketMk);
   const mmc=marketMkCredits(), mmb=marketMkBOM(), mmcan=canAfford(mmc,mmb);
   el("btnMarketMk").disabled=!mmcan||state.markets<1; el("btnMarketMk").classList.toggle("can",mmcan&&state.markets>0);
   el("btnMarketMk").innerHTML=`Upgrade Terminal Mk ${state.marketMk+1}<small>${money(mmc)} · ${bomStr(mmb)}</small>`;
@@ -1711,7 +1896,7 @@ function buildMarket(){ const p=planMarket(capNum()); if(p.n<=0)return; const bo
 function mkMarket(){ if(state.markets<1)return; const cr=marketMkCredits(),bom=marketMkBOM(); if(!canAfford(cr,bom))return;
   pay(cr,bom); state.marketMk++; SND.build(); updateUI(); }
 function sellAll(id){ const amt=state.items[id]||0; if(amt<=0)return 0;
-  const g=amt*ITEMS[id].sell*marketMult(); state.items[id]=0; addCredits(g);
+  const g=sellValue(id, amt); state.items[id]=0; addCredits(g);   // a big manual dump saturates the market (marginal price sag)
   sessionClicks++; SND.sell(); toast(`Sold ${fmt(amt)} ${ITEMS[id].n} → ${money(g)}`); updateUI(); return g; }
 function mine(){ const cap=capOf("ironOre"), amt=orePerClick()*prospectMult(); state.items.ironOre=Math.min(cap,(state.items.ironOre||0)+amt); state.stats.produced+=amt; sessionClicks++;
   state.prospect=(state.prospect||0)+1;
@@ -1736,7 +1921,7 @@ function collapseForks(n){ n=Math.min(n, state.forks||0); if(n<=0)return;       
 function restructure(gain){   // core Restructure (silent — callers add juice; also used by Auto-Restructure)
   state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; state.lastBpGain=gain;
   freshRun(state); recomputeStats();
-  for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; structureDirty=true; resetStructureDOM();
+  for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; for(const k in demandSat)demandSat[k]=0; structureDirty=true; resetStructureDOM();
   save(); updateUI(); renderTree();
 }
 function doPrestige(){
@@ -1758,7 +1943,7 @@ function doFilePatent(){
 }
 function filePatent(gain){   // core File-Patent (silent; also used by Auto-Patent)
   state.patents=(state.patents||0)+gain; state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;
-  freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0;
+  freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; for(const k in demandSat)demandSat[k]=0;
   recomputeStats(); resetStructureDOM(); save(); updateUI(); renderTree();
 }
 function upgradePatent(id){ const p=PATENTS.find(x=>x.id===id); if(!p) return; const l=state.patentUpg[id]||0;
@@ -1780,7 +1965,7 @@ function ascend(gain){   // core Ascension (silent; also used by Auto-Ascend)
   state.patents=0; state.patentUpg={};                                 // Patents
   state.fleet=0; state.launched=0;                                     // Fleet
   state.stats.bpEarned=0;                                              // re-lock the ages
-  freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0;
+  freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; for(const k in demandSat)demandSat[k]=0;
   recomputeStats(); resetStructureDOM(); save(); updateUI(); renderTree();
 }
 function upgradeDM(id){ const u=DM_AUTO.find(x=>x.id===id); if(!u) return; const l=state.dmUpg[id]||0; if(l>=u.max) return;
@@ -1844,6 +2029,7 @@ function migrate(s){
   out.bpCycle = s.bpCycle||0;
   out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
   out.fleet = s.fleet||0; out.launched = s.launched||0;   // Von Neumann Fleet is permanent
+  out.contracts = Array.isArray(s.contracts) ? s.contracts : [];   // Layer 3 contract board
   out.accumulators = s.accumulators||0; out.charge = s.charge||0;
   if(s.research){                                   // refund old flat-research Blueprints into the new tree
     const OLD={automation:[1,1.7],efficiency:[2,1.9],logistics:[1,1.8],market:[1,1.8],massProduction:[2,2.0],
@@ -1991,6 +2177,9 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.39.2","More Trade Terminal polish. The market table now has column headers and controls: <b>Sort</b> it by Tier (production order), Value (priciest first), or A–Z, and <b>Show</b> either everything or just the goods you're actually Producing (cuts the clutter late-game). Every row gets a <b>$</b> to sell that item on the spot, and rows the terminals are actively clearing now show a green left edge — so in Overstock mode you can see at a glance exactly what's being sold."],
+  ["0.39.1","Trade Terminal, rebuilt around the new market. The old dropdown is gone — in its place a live market table: every sellable item as a row showing its current price-per-unit and a demand bar that's green at full price and reddens as that market saturates, plus your stock on hand. Click any row (or ⚙️ Overstock) to set what the terminals auto-sell — no more hunting a dropdown. A stats line up top shows your terminals, Mk, current target, sell rate, and live income/s. Now you can see the whole market at a glance and tell instantly which goods are oversold and which are paying full price."],
+  ["0.39.0","The economy is now a real market, not a fixed-price faucet — three interlocking layers. (1) VALUE-ADD: every item's sale price is now derived from its recipe, so refining ALWAYS pays and the deeper you go the exponentially richer the good. This fixes some genuinely broken spots — a Qubit used to sell for LESS than the parts it's made from! (2) DEMAND: each item's market now has depth. Flood one item with sales and its price sags (down to 30%); it recovers over time — so spreading your sales (overstock mode, or refining deeper) keeps prices high. Every resource chip's $ shows its live price and a ▾ when its market is saturated. (3) CONTRACTS: a new 📦 board of premium buyers (under the Trade Terminal) wants specific goods and pays well above market — and fulfilling one instantly cools that item's market back down. Deliver from stock, or skip to reroll. Together: what you sell, how you spread it, and which contracts you chase are now real decisions."],
   ["0.38.0","Ascension now DRIVES progression — the long game finally advances instead of repeating. Before, once you'd built out the meta, every Ascension era just re-ground the same Blueprints and you plateaued around the Space Age; the top ages were effectively out of reach. Two changes fix that. (1) Ascension now grants LIFETIME Dark Matter that never gets spent away — it's a permanent record of how far you've come. Spending Dark Matter on automations no longer sets you back. (2) That lifetime Dark Matter powers an Ascendant Foundation: every reset now pre-builds a balanced head-start factory that grows the more you've ascended, so each era you re-climb HIGHER than the last instead of starting from zero. And the 🌀 Transcendence Age (Age VIII) is now gated behind accumulated Dark Matter — it's the destination you work toward across many Ascensions, not something a single run can brute-force. The result: a genuine hundreds-of-hours arc where every Ascension visibly pushes your ceiling upward. (Balanced with a new full-game pacing sim.)"],
   ["0.37.0","The Transcendence Age gets its signature: 🌀 Reality Forking. Once you're compiling Reality Shards, you can spend them to FORK your entire factory into parallel timelines — every fork is a full copy of your production running at once, so it's a multiplier on ALL output. But a parallel reality is ferociously power-hungry and the draw escalates with each fork you open, so you can only run as many as your Dyson Swarm can feed — over-fork and the whole grid browns out. It's the culmination lever: doubly-resourced (Reality Shards to open a fork, grid power to sustain it), tying the Dyson Swarm (Age VII) directly into the Age VIII endgame. Open forks with 🔮 to spend, collapse them to reclaim power. This is the final piece of the cosmic expansion — the whole factory, forked across realities."],
   ["0.36.0","The journey goes further still — the 🌀 Transcendence Age (Age VIII), where you stop mining reality and start computing it. A 💠 Quantum Fab spins Dyson Panels into Qubits, a 🪐 Matrioshka Node folds Qubits and Antimatter into Simulated Matter, and a 🔮 Reality Compiler forges Reality Shards — the deepest, most expensive chain in the game (gated at 2,800 Blueprints earned). This age also completes the signatures: the 🔆 Dyson Swarm (Age VII) is live. Deploy your Dyson Panels into a swarm ringing the star and each one permanently feeds the grid enormous free power (scaled by your generator tech) — finally an answer to the crushing late-game power draw. Deploy panels, power the reality forge, transcend."],
@@ -2080,7 +2269,14 @@ function wire(){
   el("btnWarehouse").addEventListener("click",buildWarehouse);
   el("btnMarket").addEventListener("click",buildMarket);
   el("btnMarketMk").addEventListener("click",mkMarket);
-  el("marketSel").addEventListener("change",e=>{ state.marketItem=e.target.value; updateUI(); });
+  el("marketTable").addEventListener("click",e=>{
+    const s=e.target.closest("[data-msell]");
+    if(s){ const g=sellAll(s.dataset.msell); if(g>0) floatAt(e.clientX,e.clientY,"+"+money(g),"var(--good)"); return; }   // quick-sell one item
+    const r=e.target.closest("[data-mkitem]"); if(r){ state.marketItem=r.dataset.mkitem; SND.click&&SND.click(); updateUI(); } });
+  el("marketSort").addEventListener("click",e=>{ const b=e.target.closest("[data-msort]"); if(b){ marketSort=b.dataset.msort; updateUI(); } });
+  el("marketFilter").addEventListener("click",e=>{ const b=e.target.closest("[data-mfilter]"); if(b){ marketFilterMine=b.dataset.mfilter==="mine"; updateUI(); } });
+  el("contractList").addEventListener("click",e=>{ const f=e.target.closest("[data-fulfill]"), s=e.target.closest("[data-skip]");
+    if(f) fulfillContract(+f.dataset.fulfill); else if(s) skipContract(+s.dataset.skip); });
   el("btnPrestige").addEventListener("click",doPrestige);
   el("generators").addEventListener("click",e=>{ const a=e.target.closest("[data-gauto]"),b=e.target.closest("[data-gen]");
     if(a){ const key="gen:"+a.dataset.gauto; state.auto[key]=!state.auto[key]; updateUI(); }

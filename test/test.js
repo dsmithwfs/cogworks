@@ -452,6 +452,100 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("single-item sell still works", E.state.items.ironOre < 100 && E.state.credits > c0);
 })();
 
+// ---------------------------------------------------------------- economy Layer 1: value-add gradient
+(() => {
+  // Every recipe output must sell for MORE than the summed value of its inputs (markup ≥ 1) — refining always pays.
+  fresh();
+  const done = {};
+  let worst = Infinity, worstItem = null;
+  for (const key of E.MORDER) { const m = E.MACHINES[key];
+    for (const o in m.out) { if (done[o]) continue; done[o] = true;
+      if (!m.in || !Object.keys(m.in).length) continue;            // raw extractor
+      let inVal = 0; for (const r in m.in) inVal += m.in[r] * E.ITEMS[r].sell;
+      const markup = E.ITEMS[o].sell * m.out[o] / inVal;
+      if (markup < worst) { worst = markup; worstItem = o; }
+    }
+  }
+  ok("every processing step has a positive value-add markup", worst > 1.0001, `worst = ${worst.toFixed(2)}× at ${worstItem}`);
+  near("markup equals VALUE_MARKUP", worst, E.VALUE_MARKUP, 0.02);
+  // deriveSellValues is deterministic + idempotent (re-running doesn't drift the prices)
+  const snapshot = E.MORDER.map(k => Object.keys(E.MACHINES[k].out).map(o => E.ITEMS[o].sell));
+  E.deriveSellValues();
+  const snapshot2 = E.MORDER.map(k => Object.keys(E.MACHINES[k].out).map(o => E.ITEMS[o].sell));
+  ok("deriveSellValues is idempotent", JSON.stringify(snapshot) === JSON.stringify(snapshot2));
+})();
+
+// ---------------------------------------------------------------- economy Layer 2: market demand depth
+(() => {
+  fresh();
+  ok("a fresh market is at full price", Math.abs(E.demandFactor("gear") - 1) < 1e-9);
+  // selling saturates the market → price sags
+  const depth = E.demandDepth("gear");
+  E.sellValue("gear", depth * 0.5);
+  ok("selling raises saturation (price sags)", E.demandFactor("gear") < 1 && E.demandFactor("gear") > E.DEMAND_FLOOR);
+  // flooding hits the floor, never below
+  E.sellValue("gear", depth * 5);
+  ok("a flooded market bottoms out at the floor", Math.abs(E.demandFactor("gear") - E.DEMAND_FLOOR) < 1e-6);
+  // a big dump earns strictly less than the same quantity at full price (the sag is real)
+  fresh();
+  const qty = E.demandDepth("gear");
+  const full = qty * E.ITEMS.gear.sell * E.marketMult();
+  const got = E.sellValue("gear", qty);
+  ok("dumping a large quantity earns less than full price", got < full * 0.95);
+  // markets recover over time (simulate decays saturation each tick)
+  fresh();
+  E.sellValue("gear", E.demandDepth("gear") * 2);       // flood it
+  const sagged = E.demandFactor("gear");
+  E.state.machines.miner = 1;                            // give simulate something to run
+  for (let i = 0; i < 30; i++) E.simulate(1, 1);         // 30s of recovery
+  ok("markets recover toward full price over time", E.demandFactor("gear") > sagged + 0.1);
+  // demand is independent per item — saturating one doesn't move another
+  fresh();
+  E.sellValue("gear", E.demandDepth("gear") * 3);
+  ok("saturation is per-item", E.demandFactor("gear") < 0.5 && Math.abs(E.demandFactor("steel") - 1) < 1e-9);
+})();
+
+// ---------------------------------------------------------------- economy Layer 3: contracts
+(() => {
+  fresh();
+  ok("contracts locked before you're trading", !E.contractsUnlocked());
+  E.state.markets = 1;
+  ok("contracts unlock once you have a terminal", E.contractsUnlocked());
+
+  // the board fills to CONTRACT_SLOTS with valid, distinct contracts
+  E.state.contracts = []; E.refillContracts();
+  ok("board fills to CONTRACT_SLOTS", E.state.contracts.length === E.CONTRACT_SLOTS);
+  ok("every contract targets an unlocked item with a positive qty and reward",
+     E.state.contracts.every(c => E.itemUnlocked(c.item) && c.qty > 0 && c.reward > 0));
+  ok("contracts are for distinct items", new Set(E.state.contracts.map(c => c.item)).size === E.state.contracts.length);
+  // reward is a premium over base market value
+  ok("reward is a premium over base value", E.state.contracts.every(c => c.reward >= c.qty * E.ITEMS[c.item].sell * E.CONTRACT_PREMIUM[0] - 1));
+
+  // fulfilling: needs the goods; consumes them; pays; refreshes that item's demand; refills the slot
+  const c = E.state.contracts[0];
+  E.state.items[c.item] = 0;
+  const crBefore = E.state.credits, nBefore = E.state.contracts.length;
+  E.fulfillContract(c.cid);
+  ok("can't fulfill without the goods", E.state.contracts.some(x => x.cid === c.cid) && E.state.credits === crBefore);
+  E.state.items[c.item] = c.qty + 5;
+  E.demandSat[c.item] = 0.9;                            // pretend this market was saturated
+  E.fulfillContract(c.cid);
+  ok("fulfilling pays the reward", E.state.credits === crBefore + c.reward);
+  ok("fulfilling consumes the goods", Math.abs(E.state.items[c.item] - 5) < 1e-6);
+  ok("fulfilling cools that item's market (demand reset)", E.demandSat[c.item] === 0);
+  ok("fulfilling refills the board", E.state.contracts.length === nBefore && !E.state.contracts.some(x => x.cid === c.cid));
+
+  // skip rerolls a contract (removes it, board refills)
+  const sc = E.state.contracts[0];
+  E.skipContract(sc.cid);
+  ok("skip removes the contract and refills", !E.state.contracts.some(x => x.cid === sc.cid) && E.state.contracts.length === E.CONTRACT_SLOTS);
+
+  // contracts survive a save/load
+  const saved = E.defaultState(); saved.markets = 1; saved.contracts = [{ cid: 7, item: "gear", qty: 50, reward: 999 }];
+  const loaded = E.migrate(JSON.parse(JSON.stringify(saved)));
+  ok("contracts persist through migrate", Array.isArray(loaded.contracts) && loaded.contracts.length === 1 && loaded.contracts[0].reward === 999);
+})();
+
 // ---------------------------------------------------------------- talents persist across reload (migrate)
 (() => {
   // Simulate a saved game with purchased talents, then load it (migrate) as a page refresh would.

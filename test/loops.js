@@ -9,11 +9,11 @@ const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).
 
 // ---- in-run greedy strategy (same spirit as balance.js) ----
 const RESERVE = 40;
-function sellAll(id) { const a = E.state.items[id] || 0; if (a > 0) { E.addCredits(a * E.ITEMS[id].sell * E.marketMult()); E.state.items[id] = 0; } }
+function sellAll(id) { const a = E.state.items[id] || 0; if (a > 0) { E.addCredits(E.sellValue(id, a)); E.state.items[id] = 0; } }
 function sellSurplus() {
   const consumed = new Set();
   for (const k of E.MORDER) if ((E.state.machines[k] || 0) > 0) for (const r in E.MACHINES[k].in) consumed.add(r);
-  for (const id in E.ITEMS) { if (!E.itemUnlocked(id) || consumed.has(id)) continue; const q = (E.state.items[id] || 0) - RESERVE; if (q > 0) { E.addCredits(q * E.ITEMS[id].sell * E.marketMult()); E.state.items[id] = RESERVE; } }
+  for (const id in E.ITEMS) { if (!E.itemUnlocked(id) || consumed.has(id)) continue; const q = (E.state.items[id] || 0) - RESERVE; if (q > 0) { E.addCredits(E.sellValue(id, q)); E.state.items[id] = RESERVE; } }
 }
 function strategize() {
   const s = E.state;
