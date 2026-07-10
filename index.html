@@ -524,7 +524,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.40.4";
+const VERSION = "0.40.5";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -927,6 +927,7 @@ function genContract(){
 }
 function refillContracts(){
   if(!state.contracts) state.contracts=[];
+  for(const c of state.contracts) if(c.cid>contractSeq) contractSeq=c.cid;   // keep new cids unique (contractSeq resets to 0 on reload, saved contracts keep theirs)
   let guard=0;
   while(state.contracts.length < CONTRACT_SLOTS && guard++ < 20){ const c=genContract(); if(!c) break; state.contracts.push(c); }
 }
@@ -1407,6 +1408,7 @@ function resetStructureDOM(){                      // force full rebuild of dyna
   el("machines").dataset.built="";
   el("ticker").innerHTML="";
   el("marketTable").dataset.sig="";
+  el("contractList").dataset.csig="";
   el("generators").dataset.count="";
 }
 function ensureTicker(){
@@ -1603,16 +1605,26 @@ function renderContracts(){
   const show=contractsUnlocked();
   el("contractPanel").style.display = show ? "" : "none";
   if(!show) return;
-  setHTML(el("contractList"), (state.contracts||[]).map(c=>{
-    const it=ITEMS[c.item]; if(!it) return "";
-    const have=Math.floor(state.items[c.item]||0), can=have>=c.qty;
-    return `<div class="toolrow" style="align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0">
-      <span style="min-width:230px">${it.ic} Deliver <b>${fmt(c.qty)}</b> ${it.n} <span class="${can?'pos':'muted'}">(${fmt(have)}/${fmt(c.qty)})</span></span>
-      <span class="pos" style="min-width:120px">→ ${money(c.reward)}</span>
-      <button class="b mk" data-fulfill="${c.cid}" style="max-width:130px" ${can?"":"disabled"}>Fulfill</button>
-      <button class="b" data-skip="${c.cid}" style="max-width:80px" title="Reroll this contract">Skip</button>
-    </div>`;
-  }).join("") || `<div class="muted" style="padding:6px">Stocking the contract board…</div>`);
+  const list=state.contracts||[], host=el("contractList");
+  // Rebuild the rows ONLY when the contract set changes — so the Fulfill/Skip buttons stay stable and clicks land
+  // (the "have" count ticks up every frame while you produce the item; rebuilding then would recreate the buttons
+  //  mid-click and drop it).
+  const sig=list.map(c=>c.cid+":"+c.item+":"+c.qty+":"+c.reward).join(",");
+  if(host.dataset.csig!==sig){
+    host.dataset.csig=sig;
+    host.innerHTML = list.map(c=>{ const it=ITEMS[c.item]; if(!it) return "";
+      return `<div class="toolrow" style="align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0">
+        <span style="min-width:230px">${it.ic} Deliver <b>${fmt(c.qty)}</b> ${it.n} <span id="cq-${c.cid}"></span></span>
+        <span class="pos" style="min-width:120px">→ ${money(c.reward)}</span>
+        <button class="b mk" data-fulfill="${c.cid}" id="cf-${c.cid}" style="max-width:130px">Fulfill</button>
+        <button class="b" data-skip="${c.cid}" style="max-width:80px" title="Reroll this contract">Skip</button>
+      </div>`;
+    }).join("") || `<div class="muted" style="padding:6px">Stocking the contract board…</div>`;
+  }
+  // update only the volatile bits in place — never touches the buttons
+  for(const c of list){ const have=Math.floor(state.items[c.item]||0), can=have>=c.qty;
+    setHTML(el("cq-"+c.cid), `<span class="${can?'pos':'muted'}">(${fmt(have)}/${fmt(c.qty)})</span>`);
+    const b=el("cf-"+c.cid); if(b) b.disabled=!can; }
 }
 // Factory health bar — whole-chain state at a glance: machine/running counts, power gauge, income, and a bottleneck alert.
 function renderFactoryHealth(){
@@ -2298,6 +2310,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.40.5","Fixed the Contracts <b>Fulfill</b> button not responding. The delivery count ticks up every moment you produce the item, and the whole contract row (buttons included) was being rebuilt each time — so a click landed on a button that had just been replaced. The rows are now built once and only the count updates, so Fulfill and Skip work on the first click."],
   ["0.40.4","You can respec the tree again with Blueprint Autopilot on. Before, the autopilot would instantly re-allocate everything the moment you refunded, so a respec never stuck. Now respeccing automatically pauses the autopilot (you're told, and it holds), and every Ascension automation has a <b>⏸ Pause / ▶ Resume</b> toggle in the 🌑 Ascension tab — so you can turn Blueprint Autopilot (or any of them) off, re-path your tree by hand, and switch it back on when you're done."],
   ["0.40.3","Fixed the buttons sometimes needing a few clicks to register. The screen refreshes ~10×/second, and every refresh was rebuilding each button's contents from scratch — so if your click landed in that split-second, the browser threw it away. Now the game only touches a button when something about it actually changed, so Build, Mk, Fulfill, and the rest respond on the first click. (It's lighter on your device, too.)"],
   ["0.40.2","Slimmed down the machine cards. A layout rule went missing in the last update and left the Build/Mk buttons crammed into a narrow column — they're back to a clean full-width row now. The cards are tighter all round (less padding, smaller icon), and the new status bar moved to a thin strip along the card's bottom edge instead of taking up its own row, so each machine takes noticeably less space."],
