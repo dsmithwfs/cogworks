@@ -41,7 +41,7 @@ const EXPORTS = [
   "checkMilestones", "grantTP", "earnedTP",
   "talentCost", "talentSpent", "tierUnlocked",
   "PATENTS", "PATENT_UNLOCK", "PATENT_SCALE", "patentCost", "patentAvailable", "patentsUnlocked",
-  "DM_AUTO", "ASCEND_SCALE", "ASCEND_UNLOCK_AGE", "dmCost", "dmHas", "darkMatterAvailable", "ascensionUnlocked", "upgradeDM",
+  "DM_AUTO", "ASCEND_SCALE", "ASCEND_UNLOCK_AGE", "dmCost", "dmHas", "dmActive", "darkMatterAvailable", "ascensionUnlocked", "upgradeDM",
   "restructure", "filePatent", "ascend", "metaAuto", "autoAllocateBP", "autoBuyTalents",
   "AGES", "TIER_AGE", "TIER_MULT", "ROMAN", "currentAge", "workforceBonus", "deployRobots", "recallRobots",
   "WORKFORCE_MW", "workforceDraw",

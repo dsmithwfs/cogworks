@@ -968,6 +968,25 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   E.metaAuto();
   ok("Auto-Restructure prestiges automatically when worth it", E.state.prestiges > pres0);
 
+  // automations can be PAUSED (dmOff) so you can respec without the autopilot re-allocating
+  fresh();
+  E.state.dmUpg = { bpAuto: 1 };
+  ok("owned automation is active by default", E.dmActive("bpAuto") === true);
+  E.state.dmOff = { bpAuto: true };
+  ok("paused automation is not active", E.dmActive("bpAuto") === false && E.dmHas("bpAuto") === true);
+  // metaAuto skips a paused Blueprint Autopilot → a respec's Blueprints stay unallocated
+  E.state.blueprints = 200; E.state.allocated = { start: true };
+  E.metaAuto();
+  ok("paused Blueprint Autopilot does NOT re-allocate", Object.keys(E.state.allocated).length === 1 && E.state.blueprints === 200);
+  // resuming re-activates it
+  E.state.dmOff = {};
+  E.metaAuto();
+  ok("resumed Blueprint Autopilot allocates again", Object.keys(E.state.allocated).length > 1);
+  // dmOff persists through migrate
+  const savedOff = E.defaultState(); savedOff.dmUpg = { bpAuto: 1 }; savedOff.dmOff = { bpAuto: true };
+  const loadedOff = E.migrate(JSON.parse(JSON.stringify(savedOff)));
+  ok("paused state persists through migrate", loadedOff.dmOff && loadedOff.dmOff.bpAuto === true);
+
   // persists through a save/load
   const saved = E.defaultState(); saved.darkMatter = 5; saved.dmUpg = { autoRes: 1, headStart: 2 }; saved.ascensions = 3;
   const loaded = E.migrate(JSON.parse(JSON.stringify(saved)));

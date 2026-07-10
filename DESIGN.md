@@ -408,6 +408,9 @@ clicking), **Talent Autopilot** (`autoBuyTalents`), **Genesis Cache** (leveled h
 `≥1.25×lastBpGain`), **Auto-Patent** (`filePatent()`), **Auto-Ascend** (`ascend()`). The three resets are
 refactored into silent core fns (`restructure`/`filePatent`/`ascend`) that the modals *and* the automations
 both call. `dmCost = cost·(lvl+1)`; most are one-time unlocks (`max:1`), Genesis Cache is leveled (`max:10`).
+Each owned automation is **pausable** (`state.dmOff`, `dmActive = dmHas && !dmOff` gates `metaAuto`/`freshRun`;
+⏸ Pause/▶ Resume toggle in the tab) — and a **respec auto-pauses Blueprint Autopilot** (`respecAll`) so the refund
+sticks instead of being instantly re-allocated (v0.40.4).
 **Kept across Ascension:** the age *record* (`maxAge` → permanent +10%/age dividend), mastery, achievements,
 Dark Matter. The loop: climb → ascend → come back with the grind **running itself**, go deeper, repeat.
 **UI:** 🌑 Ascension tab (hidden until unlocked).

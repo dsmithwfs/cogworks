@@ -524,7 +524,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.40.3";
+const VERSION = "0.40.4";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -896,6 +896,7 @@ const ASCEND_UNLOCK_AGE = 7;                       // reach the Interstellar Age
 const ASCEND_SCALE = 300;                          // Blueprints-earned-this-era per √ Dark Matter
 const dmCost = (u,lvl) => u.cost * (lvl+1);
 const dmHas = id => (state.dmUpg[id]||0) > 0;
+const dmActive = id => dmHas(id) && !(state.dmOff && state.dmOff[id]);   // owned AND not paused — lets you pause an automation (e.g. to respec)
 const darkMatterAvailable = () => Math.floor(Math.sqrt((state.stats.bpEarned||0) / ASCEND_SCALE));
 const ascensionUnlocked = () => (state.maxAge||1) >= ASCEND_UNLOCK_AGE || (state.darkMatter||0) > 0 || (state.ascensions||0) > 0;
 
@@ -983,7 +984,7 @@ function freshRun(s){
   s.forks = 0;                                      // Transcendence-age Reality Forking: parallel factory branches (per-run)
   let ks=0; for(const id in (s.allocated||{})){ const n=NODES[id]; if(n && n.eff.kick) ks+=n.eff.kick; }
   if(ks>0){ s.warehouses+=ks; s.machines.miner+=3*ks; s.machines.ironFurnace+=2*ks; s.credits+=500*ks; }
-  const hs=(s.dmUpg&&s.dmUpg.headStart)||0;   // Ascension "Genesis Cache" — pre-seed each reset for faster re-climbs
+  const hs=(s.dmUpg && !(s.dmOff&&s.dmOff.headStart) && s.dmUpg.headStart)||0;   // Ascension "Genesis Cache" — pre-seed each reset for faster re-climbs (respects pause)
   if(hs>0){ s.credits+=2000*hs; s.machines.miner+=8*hs; s.machines.coalDrill+=5*hs; s.machines.ironFurnace+=5*hs; s.machines.gearPress+=3*hs; }
   // Ascendant Foundation — accumulated LIFETIME Dark Matter carries a head-start forward that GROWS every era, so
   // you re-climb HIGHER over time (the cross-era progression engine that makes the top ages reachable). Seeds a
@@ -1005,7 +1006,7 @@ function defaultState(){
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
     fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
     contracts:[],          // Economy Layer 3: the premium-buyer contract board
-    darkMatter:0, dmUpg:{}, ascensions:0};   // Ascension layer (4th prestige): cosmic currency + permanent upgrades
+    darkMatter:0, dmUpg:{}, dmOff:{}, ascensions:0};   // Ascension layer (4th prestige): cosmic currency + permanent upgrades (dmOff = paused automations)
   freshRun(s);
   return s;
 }
@@ -1494,12 +1495,16 @@ function refundNode(id){
 function respecAll(){
   let refund=0; for(const k in state.allocated){ if(k!=="start" && state.allocated[k] && NODES[k]) refund+=NODES[k].cost; }
   if(refund<=0){ toast("Nothing allocated yet."); return; }
+  const bpAutoOn = dmActive("bpAuto");   // if the autopilot is running it will instantly re-allocate — pause it so the respec sticks
   openModal(`<h3>↺ Respec the whole tree?</h3>
     <p class="muted">Un-allocates every node and refunds <b>${fmt(refund)} 📐 Blueprints</b>.</p>
+    ${bpAutoOn?`<p class="muted" style="font-size:12px"><span class="warn">⏸ Blueprint Autopilot will be paused</span> so it doesn't immediately re-allocate — resume it anytime in the 🌑 Ascension tab.</p>`:``}
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="doRespec">Refund all</button></div>`);
   el("doRespec").onclick=()=>{ let rf=0; for(const k in state.allocated){ if(k!=="start" && state.allocated[k] && NODES[k]) rf+=NODES[k].cost; }
-    state.allocated={start:true}; state.blueprints+=rf; recomputeStats(); closeModal(); renderTree(); updateUI();
-    toast(`Respec complete: +${fmt(rf)} 📐`,"unlock"); };
+    state.allocated={start:true}; state.blueprints+=rf;
+    if(dmHas("bpAuto")){ state.dmOff=state.dmOff||{}; state.dmOff.bpAuto=true; }   // pause the autopilot so your manual re-path holds
+    recomputeStats(); closeModal(); renderTree(); updateUI();
+    toast(`Respec complete: +${fmt(rf)} 📐${bpAutoOn?" · Autopilot paused":""}`,"unlock"); };
 }
 function upgradeTalent(id){
   const t=TALENTS.find(x=>x.id===id); if(!t) return;
@@ -1934,10 +1939,11 @@ function updateUI(){
       <span class="muted" style="font-size:12px">This era: <b>${fmt(state.stats.bpEarned||0)}</b> 📐 earned · <b>${fmt(state.ascensions||0)}</b> ascensions. Dark Matter upgrades, mastery &amp; age record are kept.</span></div>
       <div class="grid" style="margin-top:10px">`;
     for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, maxed=l>=u.max, cost=dmCost(u,l), can=!maxed && (state.darkMatter||0)>=cost;
-      const status = u.max>1 ? `<span class="mk">Lv ${l}/${u.max}</span>` : (l>0?`<span class="pos" style="font-size:11px">✓ active</span>`:``);
-      const btnLabel = maxed ? (u.max>1?"MAX":"✓ active") : `${l>0&&u.max>1?"Upgrade":"Activate"} <small>🌑 ${cost}</small>`;
-      html+=`<div class="mc${l>0?' done':''}"><div class="ic">${u.ic}</div><div><div class="name">${u.name} ${status}</div><div class="rec">${u.desc}</div></div>
-        <div class="btns"><button class="b mk${can?' can':''}" data-dm="${u.id}" ${can?'':'disabled'}>${btnLabel}</button></div></div>`;
+      const owned=l>0, paused=owned && state.dmOff && state.dmOff[u.id];
+      const status = u.max>1 ? `<span class="mk">Lv ${l}/${u.max}</span>` : (owned?(paused?`<span class="warn" style="font-size:11px">⏸ paused</span>`:`<span class="pos" style="font-size:11px">✓ active</span>`):``);
+      const btnLabel = maxed ? (u.max>1?"MAX":"✓ active") : `${owned&&u.max>1?"Upgrade":"Activate"} <small>🌑 ${cost}</small>`;
+      html+=`<div class="mc${owned?' done':''}${paused?' starv':''}"><div class="ic">${u.ic}</div><div><div class="name">${u.name} ${status}</div><div class="rec">${u.desc}</div></div>
+        <div class="btns"><button class="b mk${can?' can':''}" data-dm="${u.id}" ${can?'':'disabled'}>${btnLabel}</button>${owned?`<button class="b" data-dmtoggle="${u.id}" style="max-width:104px">${paused?'▶ Resume':'⏸ Pause'}</button>`:``}</div></div>`;
     }
     el("ascensionBody").innerHTML=html+`</div>`;
   }
@@ -2090,11 +2096,11 @@ function autoBuyTalents(){ let g=0;
 }
 // Ascension meta-automation: runs & reshapes the lower prestige loops. Called each tick.
 function metaAuto(){
-  if(dmHas("bpAuto") && (state.blueprints||0)>0) autoAllocateBP();
-  if(dmHas("talAuto") && (state.talentPoints||0)>0) autoBuyTalents();
-  if(dmHas("autoRes")){ const g=bpFor(state.runCredits); if(g>=1 && g>=Math.max(2, Math.ceil((state.lastBpGain||1)*1.25))) restructure(g); }
-  if(dmHas("autoPat") && patentsUnlocked()){ const g=patentAvailable(); if(g>=1) filePatent(g); }
-  if(dmHas("autoAsc") && ascensionUnlocked()){ const g=darkMatterAvailable(); if(g>=1) ascend(g); }
+  if(dmActive("bpAuto") && (state.blueprints||0)>0) autoAllocateBP();
+  if(dmActive("talAuto") && (state.talentPoints||0)>0) autoBuyTalents();
+  if(dmActive("autoRes")){ const g=bpFor(state.runCredits); if(g>=1 && g>=Math.max(2, Math.ceil((state.lastBpGain||1)*1.25))) restructure(g); }
+  if(dmActive("autoPat") && patentsUnlocked()){ const g=patentAvailable(); if(g>=1) filePatent(g); }
+  if(dmActive("autoAsc") && ascensionUnlocked()){ const g=darkMatterAvailable(); if(g>=1) ascend(g); }
 }
 
 /* =========================================================================
@@ -2127,7 +2133,7 @@ function migrate(s){
   out.talentPoints = (typeof s.talentPoints==="number") ? s.talentPoints : out.tpClaimed;
   out.patents = s.patents||0;
   out.patentUpg = Object.assign({}, s.patentUpg||{});
-  out.darkMatter = s.darkMatter||0; out.dmUpg = Object.assign({}, s.dmUpg||{}); out.ascensions = s.ascensions||0;   // Ascension layer
+  out.darkMatter = s.darkMatter||0; out.dmUpg = Object.assign({}, s.dmUpg||{}); out.dmOff = Object.assign({}, s.dmOff||{}); out.ascensions = s.ascensions||0;   // Ascension layer
   out.bpCycle = s.bpCycle||0;
   out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
   out.fleet = s.fleet||0; out.launched = s.launched||0;   // Von Neumann Fleet is permanent
@@ -2292,6 +2298,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.40.4","You can respec the tree again with Blueprint Autopilot on. Before, the autopilot would instantly re-allocate everything the moment you refunded, so a respec never stuck. Now respeccing automatically pauses the autopilot (you're told, and it holds), and every Ascension automation has a <b>⏸ Pause / ▶ Resume</b> toggle in the 🌑 Ascension tab — so you can turn Blueprint Autopilot (or any of them) off, re-path your tree by hand, and switch it back on when you're done."],
   ["0.40.3","Fixed the buttons sometimes needing a few clicks to register. The screen refreshes ~10×/second, and every refresh was rebuilding each button's contents from scratch — so if your click landed in that split-second, the browser threw it away. Now the game only touches a button when something about it actually changed, so Build, Mk, Fulfill, and the rest respond on the first click. (It's lighter on your device, too.)"],
   ["0.40.2","Slimmed down the machine cards. A layout rule went missing in the last update and left the Build/Mk buttons crammed into a narrow column — they're back to a clean full-width row now. The cards are tighter all round (less padding, smaller icon), and the new status bar moved to a thin strip along the card's bottom edge instead of taking up its own row, so each machine takes noticeably less space."],
   ["0.40.1","Two more ways to tame a big machine list. A <b>Cards / Compact</b> density toggle: Compact shrinks every machine to a slim row (icon, name, count, status, one Build button) so you can see your whole factory at once. And <b>age groups now collapse</b> — click any age header (▾) to fold that whole era away and focus on the ages you're actively building."],
@@ -2424,7 +2431,9 @@ function wire(){
   el("buildAcc").addEventListener("click",buildAccumulator);
   el("talents").addEventListener("click",e=>{ const b=e.target.closest("[data-talent]"); if(b) upgradeTalent(b.dataset.talent); });
   el("patentBody").addEventListener("click",e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });
-  el("ascensionBody").addEventListener("click",e=>{ if(e.target.closest("#ascendBtn")) doAscend(); const u=e.target.closest("[data-dm]"); if(u) upgradeDM(u.dataset.dm); });
+  el("ascensionBody").addEventListener("click",e=>{ if(e.target.closest("#ascendBtn")){ doAscend(); return; }
+    const t=e.target.closest("[data-dmtoggle]"); if(t){ state.dmOff=state.dmOff||{}; state.dmOff[t.dataset.dmtoggle]=!state.dmOff[t.dataset.dmtoggle]; SND.click&&SND.click(); updateUI(); return; }
+    const u=e.target.closest("[data-dm]"); if(u) upgradeDM(u.dataset.dm); });
   const modes=el("buymode").querySelectorAll("button");
   modes.forEach(b=>b.addEventListener("click",()=>{ buyMode=b.dataset.mode; modes.forEach(x=>x.classList.toggle("on",x===b)); updateUI(); }));
   modes.forEach(b=>b.classList.toggle("on", b.dataset.mode==="1"));
