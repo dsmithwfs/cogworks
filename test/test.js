@@ -987,6 +987,56 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   const loadedOff = E.migrate(JSON.parse(JSON.stringify(savedOff)));
   ok("paused state persists through migrate", loadedOff.dmOff && loadedOff.dmOff.bpAuto === true);
 
+  // ---- v0.41.0: Paradox Engine, rush orders, completion, notation, tree paths ----
+  // Paradox Engine multiplies the Ascendant Foundation head-start (the endless DM sink)
+  { const base = E.defaultState(); base.stats.dmEarned = 36; E.freshRun(base);
+    const boosted = E.defaultState(); boosted.stats.dmEarned = 36; boosted.dmUpg = { paradox: 4 }; E.freshRun(boosted);
+    ok("Paradox Engine grows the Foundation head-start", (boosted.machines.miner || 0) > (base.machines.miner || 0) && boosted.credits > base.credits);
+    const pausedP = E.defaultState(); pausedP.stats.dmEarned = 36; pausedP.dmUpg = { paradox: 4 }; pausedP.dmOff = { paradox: true }; E.freshRun(pausedP);
+    ok("a paused Paradox Engine does nothing", (pausedP.machines.miner || 0) === (base.machines.miner || 0));
+    ok("Paradox Engine is effectively unbounded", E.DM_AUTO.find(u => u.id === "paradox").max >= 99); }
+
+  // Rush orders: an expired rush contract is dropped (and the board refills); live ones survive
+  fresh(); E.state.markets = 1;
+  E.state.contracts = [{ cid: 950, item: "ironOre", qty: 50, reward: 500, exp: Date.now() - 1000 }];
+  E.refillContracts();
+  ok("expired rush contracts are dropped and rerolled", !E.state.contracts.some(c => c.cid === 950) && E.state.contracts.length === E.CONTRACT_SLOTS);
+  fresh(); E.state.markets = 1;
+  E.state.contracts = [{ cid: 951, item: "ironOre", qty: 50, reward: 500, exp: Date.now() + 60000 }];
+  E.refillContracts();
+  ok("live rush contracts survive the refill sweep", E.state.contracts.some(c => c.cid === 951));
+
+  // Completion: mastering the FINAL age latches completedAt exactly once
+  fresh();
+  E.state.stats.made = { realityShard: E.AGE_GOALS[8].n };
+  E.checkAgeGoals();
+  ok("mastering the final age fires completion", !!E.state.ageGoals[8] && E.state.completedAt > 0);
+  { const t1 = E.state.completedAt; E.checkAgeGoals();
+    ok("completion only fires once", E.state.completedAt === t1); }
+
+  // Scientific notation option
+  fresh();
+  { const compact = E.fmt(2.5e9);
+    E.state.notation = "sci";
+    eq("scientific notation formats big numbers", E.fmt(2.5e9), "2.50e9");
+    ok("small numbers stay plain in sci mode", E.fmt(950) === "950");
+    E.state.notation = "compact";
+    eq("compact notation restored", E.fmt(2.5e9), compact); }
+
+  // migrate defaults for the new fields
+  { const old = E.defaultState(); delete old.completedAt; delete old.notation; delete old.stats.playSec;
+    const mig = E.migrate(JSON.parse(JSON.stringify(old)));
+    ok("migrate defaults completion/notation/playtime", mig.completedAt === 0 && mig.notation === "compact" && mig.stats.playSec === 0); }
+
+  // Tree path preview: cheapest path from the Core to a ring-2 node is the two spine nodes
+  fresh();
+  { const res = E.cheapestPathTo("ind_2");
+    ok("cheapestPathTo finds the spine path", !!res && res.path.length === 2 && res.path[1] === "ind_2" && res.from === "start");
+    ok("path cost sums the unallocated node costs", res.cost === E.NODES["ind_1"].cost + E.NODES["ind_2"].cost);
+    E.state.allocated.ind_1 = true;
+    const res2 = E.cheapestPathTo("ind_2");
+    ok("allocated nodes are free in the path", res2.cost === E.NODES["ind_2"].cost && res2.from === "ind_1"); }
+
   // persists through a save/load
   const saved = E.defaultState(); saved.darkMatter = 5; saved.dmUpg = { autoRes: 1, headStart: 2 }; saved.ascensions = 3;
   const loaded = E.migrate(JSON.parse(JSON.stringify(saved)));

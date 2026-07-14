@@ -130,6 +130,10 @@
   .tnode.avail{stroke:var(--accent);stroke-width:3}
   .tnode.avail.poor{stroke:#6b5a2f;stroke-width:2}
   .tnode.on{fill:var(--accent);stroke:var(--accent2)}
+  .tnode.match{stroke:var(--good);stroke-width:4}          /* tree search hit */
+  g.dimmed{opacity:.18}                                     /* non-matching nodes while searching */
+  .tnode.hipath{stroke:var(--accent2);stroke-width:4}       /* cheapest-path preview to the hovered node */
+  .tedge.hipath{stroke:var(--accent2);stroke-width:3.5;opacity:1}
   .tnode.t-keystone{fill:#271f3d;stroke:#6b4fb0}
   .tnode.t-keystone.avail{stroke:var(--accent2)}
   .tnode.t-keystone.on{fill:#b98cff;stroke:#fff}
@@ -446,6 +450,7 @@
       <h2>🌳 Advancement Tree
         <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">— power &amp; capability. Spend 📐 Blueprints (from Restructuring); allocate outward from the Core. Drag to pan, scroll to zoom.</span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <input id="treeSearch" placeholder="🔎 search nodes…" style="background:var(--card);border:1px solid var(--border2);color:var(--txt);border-radius:7px;padding:3px 9px;font-size:12px;width:150px">
           <span class="muted num" id="treeCount" style="font-size:12px"></span>
           <span class="buymode" id="treemode" style="margin-left:0"><button data-tmode="alloc">Allocate</button><button data-tmode="refund">Refund</button></span>
           <button class="zbtn" id="treeRespec" title="Refund the entire tree" style="width:auto;padding:0 9px">↺ Respec</button>
@@ -454,6 +459,7 @@
           <button class="zbtn" id="treeReset">⟳</button>
         </span>
       </h2>
+      <div class="muted" id="treeSummary" style="font-size:12px;margin:-4px 0 8px"></div>
       <div class="treeWrap" id="treeWrap">
         <svg id="treeSvg" width="100%" height="100%"></svg>
         <div class="treeTip" id="treeTip"></div>
@@ -510,6 +516,7 @@
         <button id="btnSave">💾 Save</button>
         <button id="btnExport">⬆ Export</button>
         <button id="btnImport">⬇ Import</button>
+        <button id="btnNotation" title="Toggle number notation (compact 1.23B / scientific 1.23e9)">🔢 Notation</button>
         <button id="btnChangelog">📜 Changelog</button>
         <button id="btnReset" class="danger">🗑 Hard reset</button>
       </div>
@@ -524,7 +531,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.40.5";
+const VERSION = "0.41.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -891,6 +898,7 @@ const DM_AUTO = [
   {id:"autoRes",   name:"Auto-Restructure",    ic:"♻", cost:3,  max:1,  desc:"Automatically Restructure once a run's Blueprint yield peaks"},
   {id:"autoPat",   name:"Auto-Patent",         ic:"⚛", cost:8,  max:1,  desc:"Automatically File a Patent whenever it would grant one"},
   {id:"autoAsc",   name:"Auto-Ascend",         ic:"🌑", cost:25, max:1,  desc:"Automatically Ascend whenever it would grant Dark Matter — the loop runs itself"},
+  {id:"paradox",   name:"Paradox Engine",      ic:"♾️", cost:10, max:99, desc:"+25% Ascendant Foundation strength per level — the endless Dark Matter sink; every level makes each era start higher"},
 ];
 const ASCEND_UNLOCK_AGE = 7;                       // reach the Interstellar Age to unlock Ascension
 const ASCEND_SCALE = 300;                          // Blueprints-earned-this-era per √ Dark Matter
@@ -913,21 +921,30 @@ const OVERSTOCK_KEEP = 0.9;                         // overstock mode leaves thi
 const CONTRACT_SLOTS = 3;                            // how many contracts sit on the board at once
 const CONTRACT_PREMIUM = [2.0, 4.0];                 // reward = qty × base value × (random premium in this range)
 const CONTRACT_QTY = [0.6, 1.6];                     // qty ≈ (random in this range) × the item's storage cap
+const RUSH_CHANCE = 0.25, RUSH_PREMIUM = [4.5, 6.5], RUSH_TIME = [240, 480];   // rush orders: much richer, but expire (real-time seconds)
 let contractSeq = 0;
 function genContract(){
   const pool = Object.keys(ITEMS).filter(id => itemUnlocked(id) && !state.contracts.some(c=>c.item===id));
   if(!pool.length) return null;
-  // Weight toward items you actually produce and toward higher value (more interesting than dumping raw ore).
+  // Uniform pick across unlocked items — deliberately includes goods you DON'T currently make (a diversification nudge).
   const id = pool[Math.floor(Math.random()*pool.length)];
   const cap = ITEMS[id].cap;
   const qty = Math.max(5, Math.round(cap * (CONTRACT_QTY[0] + Math.random()*(CONTRACT_QTY[1]-CONTRACT_QTY[0]))));
-  const prem = CONTRACT_PREMIUM[0] + Math.random()*(CONTRACT_PREMIUM[1]-CONTRACT_PREMIUM[0]);
+  // Rush orders: a chance of a much richer contract that EXPIRES — a real-time demand spike worth re-routing for.
+  const rush = Math.random() < RUSH_CHANCE;
+  const pr = rush ? RUSH_PREMIUM : CONTRACT_PREMIUM;
+  const prem = pr[0] + Math.random()*(pr[1]-pr[0]);
   const reward = Math.round(qty * ITEMS[id].sell * prem);
-  return {cid:++contractSeq, item:id, qty, reward};
+  const c = {cid:++contractSeq, item:id, qty, reward};
+  if(rush) c.exp = Date.now() + (RUSH_TIME[0] + Math.random()*(RUSH_TIME[1]-RUSH_TIME[0]))*1000;
+  return c;
 }
 function refillContracts(){
   if(!state.contracts) state.contracts=[];
   for(const c of state.contracts) if(c.cid>contractSeq) contractSeq=c.cid;   // keep new cids unique (contractSeq resets to 0 on reload, saved contracts keep theirs)
+  const now=Date.now();
+  for(const c of state.contracts) if(c.exp && c.exp<now) toast(`⏱ Rush order expired — ${ITEMS[c.item]?ITEMS[c.item].n:c.item}`);
+  state.contracts=state.contracts.filter(c=>ITEMS[c.item] && itemUnlocked(c.item) && !(c.exp && c.exp<now));   // drop stale (re-locked item) + expired rush contracts; they auto-reroll below
   let guard=0;
   while(state.contracts.length < CONTRACT_SLOTS && guard++ < 20){ const c=genContract(); if(!c) break; state.contracts.push(c); }
 }
@@ -994,15 +1011,17 @@ function freshRun(s){
   // pushing the TOP ages, instead of rebuilding all 8 tiers from scratch. Capped at a mid tier so it never trivialises.
   const dme=(s.stats&&s.stats.dmEarned)||0;
   if(dme>0){
+    const para=1+0.25*((s.dmUpg && !(s.dmOff&&s.dmOff.paradox) && s.dmUpg.paradox)||0);   // Paradox Engine: each level multiplies the Foundation
     const reach=Math.min(MAX_AGE-3, 2+Math.floor(Math.sqrt(dme)/2));  // highest tier the head-start pre-builds (caps at tier 5)
-    const topN=Math.max(2, Math.round(2+dme*0.35));                    // count at the highest seeded tier (grows with DM)
+    const topN=Math.max(2, Math.round((2+dme*0.35)*para));             // count at the highest seeded tier (grows with DM × Paradox)
     for(const key of MORDER){ const t=MACHINES[key].t; if(t<=reach) s.machines[key]=(s.machines[key]||0)+Math.round(topN*Math.pow(2.4, reach-t)); }
-    s.credits+=50000*dme;
+    s.credits+=Math.round(50000*dme*para);
   }
 }
 function defaultState(){
   const s = {version:VERSION, lastSaved:Date.now(), blueprints:0, lifetimeCredits:0, prestiges:0,
-    allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}, dmEarned:0},
+    allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}, dmEarned:0, playSec:0},
+    completedAt:0, notation:"compact",
     auto:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
     fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
@@ -1327,13 +1346,34 @@ function checkMilestones(){
 function checkAgeGoals(){
   let any=false;
   for(let a=1;a<=MAX_AGE;a++){ const g=AGE_GOALS[a]; if(!g||state.ageGoals[a]) continue;
-    if((state.stats.made[g.item]||0) >= g.n){ state.ageGoals[a]=true; any=true; screenFlash(); toast(`🏆 Age ${ROMAN[a]} mastered: ${g.desc}!`,"unlock"); } }
+    if((state.stats.made[g.item]||0) >= g.n){ state.ageGoals[a]=true; any=true; screenFlash(); toast(`🏆 Age ${ROMAN[a]} mastered: ${g.desc}!`,"unlock");
+      if(a===MAX_AGE && !state.completedAt){ state.completedAt=Date.now(); showCompletion(); } } }   // the summit — fire the one-time completion celebration
   if(any){ recomputeStats(); SND.goal(); }
+}
+// The completion moment — mastering the final age is the summit of the whole arc; give it a real celebration.
+function showCompletion(){
+  const s=state.stats;
+  const row=(k,v)=>`<li>${k}: <b>${v}</b></li>`;
+  openModal(`<h3 style="font-size:20px">🌀🏆 TRANSCENDENCE</h3>
+    <p>Your factory has compiled reality itself. Every age climbed, every system mastered — from a single hand-mined ore to parallel timelines.</p>
+    <ul style="line-height:1.7">
+      ${s.playSec?row("Time at the machines", dur(s.playSec)):""}
+      ${row("Restructures", fmt(state.prestiges||0))}
+      ${row("Ascensions", fmt(state.ascensions||0))}
+      ${row("Machines built (lifetime)", fmt(s.built||0))}
+      ${row("Credits earned (lifetime)", money(state.lifetimeCredits||0))}
+      ${row("Dark Matter earned", fmt(s.dmEarned||0))}
+      ${row("Von Neumann fleet", fmt(state.fleet||0))}
+    </ul>
+    <p class="muted">The factory continues — push deeper forks, higher eras, bigger numbers. Thank you for playing.</p>
+    <div class="rw"><button class="primary" data-close>Onward ▸</button></div>`);
+  screenFlash(); SND.goal();
 }
 let lastReal = Date.now();
 function tick(){
   const now=Date.now(); let dt=(now-lastReal)/1000; lastReal=now;
   if(dt<0)dt=0; if(dt>5)dt=5;
+  state.stats.playSec=(state.stats.playSec||0)+dt;                      // lifetime active playtime (for the completion recap)
   if(state.veinLeft>0) state.veinLeft=Math.max(0, state.veinLeft-dt);   // Prospecting: expire the Rich Vein surge
   const before={credit:state.credits}; for(const k in ITEMS) before[k]=state.items[k];
   const madeBefore={}, potBefore={}; for(const k in ITEMS){ madeBefore[k]=state.stats.made[k]||0; potBefore[k]=potMade[k]||0; }
@@ -1365,6 +1405,7 @@ function tick(){
 function fmt(n){
   if(!isFinite(n)) return "∞";
   const neg=n<0; n=Math.abs(n); let s;
+  if(n>=1e6 && typeof state!=="undefined" && state.notation==="sci") return (neg?"-":"")+n.toExponential(2).replace("e+","e");   // scientific mode (Stats tab option)
   if(n<1000) s=(n>=100||Number.isInteger(n))?Math.floor(n).toString():n.toFixed(n<10?2:1);
   else{ const u=["K","M","B","T","Qa","Qi","Sx","Sp"]; let i=-1,x=n;
     while(x>=1000&&i<u.length-1){x/=1000;i++;}
@@ -1440,7 +1481,7 @@ function ensureMachines(){
         if((AGE_DM[age]||0)>0) reqs.push(`<b>${fmt(AGE_DM[age])} 🌑 Dark Matter</b> earned ${needDM?`<span class="muted">(have ${fmt(state.stats.dmEarned||0)})</span>`:`<span class="pos">✓</span>`}`);
         const how = needDM ? `<b>🌑 Ascend</b> across eras to accumulate Dark Matter` : `<b>♻ Restructure</b> and spend in the tree to progress`;
         html+=`<div class="tier-h" style="opacity:.75">🔒 ${AGES[age].ic} Age ${ROMAN[age]} · ${AGES[age].n} — locked</div>
-          <div class="st" style="padding:7px 10px;line-height:1.55">Requires ${reqs.join(" and ")} to unlock this age's machines — ${how}.</div>`;
+          <div class="st" style="grid-column:1/-1;padding:7px 10px;line-height:1.55">Requires ${reqs.join(" and ")} to unlock this age's machines — ${how}.</div>`;
         break;
       }
       continue;
@@ -1520,6 +1561,7 @@ function applyCam(){ const g=el("treeCam"); if(g) g.setAttribute("transform",`tr
 function centerTree(){ const w=el("treeWrap"), ww=w.clientWidth||900, wh=w.clientHeight||560;
   cam.x=ww/2 - cam.z*CX; cam.y=wh/2 - cam.z*CY; applyCam(); }
 function buildTree(){
+  buildEdgeIndex();
   let e=""; EDGES.forEach((ed,i)=>{ const a=NODES[ed[0]], b=NODES[ed[1]];
     e+=`<line class="tedge" data-edge="${i}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`; });
   let ns=""; for(const id in NODES){ const n=NODES[id];
@@ -1532,19 +1574,79 @@ function buildTree(){
   el("treeSvg").innerHTML=`<g id="treeCam">${e}${ns}</g>`;
   cam.z=0.55; centerTree(); renderTree();
 }
+let treeSearch = "";                                   // tree search query (highlights matches, dims the rest)
+let pathHiNodes = [], pathHiEdges = [];                // currently-highlighted cheapest-path preview
+let EDGE_IDX = {};                                     // "a|b" → edge index, for path highlighting
+function buildEdgeIndex(){ EDGE_IDX={}; EDGES.forEach((ed,i)=>{ EDGE_IDX[ed[0]+"|"+ed[1]]=i; EDGE_IDX[ed[1]+"|"+ed[0]]=i; }); }
+// Dijkstra from the allocated frontier to `target` (weight = each unallocated node's BP cost).
+// Answers "what's the cheapest way to reach that node?" for the hover preview.
+let lastPathKey=null, lastPathResult=null;
+function cheapestPathTo(target){
+  if(state.allocated[target] || !NODES[target]) return null;
+  const key=target+"|"+Object.keys(state.allocated).length;   // self-invalidates when the allocation set changes
+  if(lastPathKey===key) return lastPathResult;
+  const dist={}, prev={}, done={};
+  for(const id in NODES) dist[id]=state.allocated[id]?0:Infinity;
+  for(;;){
+    let u=null, best=Infinity;
+    for(const id in NODES) if(!done[id] && dist[id]<best){ best=dist[id]; u=id; }
+    if(u===null || u===target) break;
+    done[u]=true;
+    for(const v of NODES[u].links){ if(done[v]) continue;
+      const w=state.allocated[v]?0:NODES[v].cost;
+      if(dist[u]+w<dist[v]){ dist[v]=dist[u]+w; prev[v]=u; } }
+  }
+  let res=null;
+  if(isFinite(dist[target])){
+    const path=[]; let cur=target;
+    while(cur!==undefined && !state.allocated[cur]){ path.unshift(cur); cur=prev[cur]; }
+    res={path, cost:dist[target], from:cur};                       // `from` = the allocated node the path grows out of
+  }
+  lastPathKey=key; lastPathResult=res;
+  return res;
+}
+function clearPathHighlight(){
+  for(const g of pathHiNodes) g.firstChild.classList.remove("hipath");
+  for(const l of pathHiEdges) l.classList.remove("hipath");
+  pathHiNodes=[]; pathHiEdges=[];
+}
+function showPathHighlight(res){
+  clearPathHighlight();
+  if(!res) return;
+  const svg=el("treeSvg");
+  const ids=[res.from, ...res.path];
+  for(const id of res.path){ const g=svg.querySelector(`[data-node="${id}"]`); if(g){ g.firstChild.classList.add("hipath"); pathHiNodes.push(g); } }
+  for(let i=0;i<ids.length-1;i++){ const ei=EDGE_IDX[ids[i]+"|"+ids[i+1]];
+    if(ei!==undefined){ const l=svg.querySelector(`[data-edge="${ei}"]`); if(l){ l.classList.add("hipath"); pathHiEdges.push(l); } } }
+}
+// Σ of every allocated node's effects — makes the tree's total contribution legible at a glance.
+function renderTreeSummary(){
+  const host=el("treeSummary"); if(!host) return;
+  const sum={};
+  for(const id in state.allocated){ if(!state.allocated[id]||id==="start") continue; const n=NODES[id]; if(!n) continue;
+    for(const k in n.eff) sum[k]=(sum[k]||0)+n.eff[k]; }
+  setHTML(host, Object.keys(sum).length ? `<b>Σ allocated:</b> ${effText(sum)}` : `Nothing allocated yet — spend 📐 Blueprints outward from the Core.`);
+}
 function renderTree(){
   const svg=el("treeSvg"); if(!svg || !svg.firstChild) return;
+  lastPathKey=null;                                                 // allocations may have changed — invalidate the path cache
+  const searching=treeSearch.length>=2;
   svg.querySelectorAll("[data-node]").forEach(g=>{ const id=g.dataset.node, n=NODES[id];
     let cls="tnode t-"+n.type+" ";
     if(state.allocated[id]){ cls+="on"; if(treeMode==="refund" && removable(id)) cls+=" refundable"; }
     else if(nodeAvailable(id)) cls+=(state.blueprints>=n.cost?"avail":"avail poor");
     else cls+="lock";
+    const match=searching && (n.name.toLowerCase().includes(treeSearch) || (n.desc||"").toLowerCase().includes(treeSearch));
+    if(match) cls+=" match";
+    g.classList.toggle("dimmed", searching && !match);
     g.firstChild.setAttribute("class",cls);
   });
   svg.querySelectorAll("[data-edge]").forEach(l=>{ const ed=EDGES[+l.dataset.edge];
     l.setAttribute("class","tedge"+((state.allocated[ed[0]]&&state.allocated[ed[1]])?" on":"")); });
+  pathHiNodes=[]; pathHiEdges=[];                                   // class rewrites above cleared any highlight
   const total=Object.keys(NODES).length-1, got=Object.keys(state.allocated).filter(k=>k!=="start"&&state.allocated[k]).length;
   const ct=el("treeCount"); if(ct) ct.textContent=`${got}/${total} nodes · 📐 ${fmt(state.blueprints)}`;
+  renderTreeSummary();
 }
 let marketSort = "tier";       // "tier" (chain order) | "value" (base price high→low) | "az"
 let marketFilterMine = false;  // Producing-only filter
@@ -1613,9 +1715,10 @@ function renderContracts(){
   if(host.dataset.csig!==sig){
     host.dataset.csig=sig;
     host.innerHTML = list.map(c=>{ const it=ITEMS[c.item]; if(!it) return "";
-      return `<div class="toolrow" style="align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0">
-        <span style="min-width:230px">${it.ic} Deliver <b>${fmt(c.qty)}</b> ${it.n} <span id="cq-${c.cid}"></span></span>
+      return `<div class="toolrow" style="align-items:center;border:1px solid ${c.exp?"var(--warn)":"var(--border)"};border-radius:8px;padding:8px 10px;margin:6px 0${c.exp?";background:rgba(255,180,84,.06)":""}">
+        <span style="min-width:230px">${c.exp?`<b class="warn">⏱ RUSH</b> · `:""}${it.ic} Deliver <b>${fmt(c.qty)}</b> ${it.n} <span id="cq-${c.cid}"></span></span>
         <span class="pos" style="min-width:120px">→ ${money(c.reward)}</span>
+        ${c.exp?`<span class="warn num" id="ct-${c.cid}" style="min-width:64px;font-size:12px"></span>`:""}
         <button class="b mk" data-fulfill="${c.cid}" id="cf-${c.cid}" style="max-width:130px">Fulfill</button>
         <button class="b" data-skip="${c.cid}" style="max-width:80px" title="Reroll this contract">Skip</button>
       </div>`;
@@ -1624,13 +1727,14 @@ function renderContracts(){
   // update only the volatile bits in place — never touches the buttons
   for(const c of list){ const have=Math.floor(state.items[c.item]||0), can=have>=c.qty;
     setHTML(el("cq-"+c.cid), `<span class="${can?'pos':'muted'}">(${fmt(have)}/${fmt(c.qty)})</span>`);
+    if(c.exp) setText(el("ct-"+c.cid), dur(Math.max(0,(c.exp-Date.now())/1000)));
     const b=el("cf-"+c.cid); if(b) b.disabled=!can; }
 }
 // Factory health bar — whole-chain state at a glance: machine/running counts, power gauge, income, and a bottleneck alert.
 function renderFactoryHealth(){
   const built=Object.values(state.machines).reduce((a,c)=>a+c,0);
   let running=0; for(const k of MORDER){ if((state.machines[k]||0)>0 && rate[Object.keys(MACHINES[k].out)[0]]>0.001) running++; }
-  const ch=chainHealth(), b=bottleneck(), pct=Math.round((lastPower.ratio||1)*100), income=Math.max(0,rate.credit||0);
+  const ch=chainHealth(), b=bottleneck(), pct=Math.round((lastPower.ratio||1)*100), income=rate.credit||0;   // signed net — heavy auto-build spending shows red instead of a misleading $0
   let side;
   if(ch.starved>0 && b) side=`<div class="health warn"><span class="neg">⚠ Bottleneck — ${ITEMS[b.id].ic} ${ITEMS[b.id].n} starved</span><button class="jump" data-jump="${b.id}">Find ↓</button></div>`;
   else if(ch.full>0)    side=`<div class="health warn"><span class="warn">■ ${ch.full} machine${ch.full==1?"":"s"} backed up</span><button class="jump" data-jump="__full__">Find ↓</button></div>`;
@@ -1638,12 +1742,14 @@ function renderFactoryHealth(){
   setHTML(el("factoryHealth"),
      `<div class="cell"><span class="lbl">Machines</span><b class="num">${fmt(built)}</b> <span class="muted num">· ${fmt(running)} on</span></div>`
     +`<div class="cell"><span class="lbl">Power</span><span class="num ${pct<100?'warn':'pos'}">${pct}%</span><div class="gauge"><div style="width:${Math.min(100,pct)}%;background:${pct<100?'var(--warn)':'var(--good)'}"></div></div></div>`
-    +`<div class="cell"><span class="lbl">Income</span><b class="num pos">${money(income)}</b><span class="muted">/s</span></div>`
+    +`<div class="cell"><span class="lbl">Net income</span><b class="num ${income>=-0.01?'pos':'neg'}">${income<-0.01?'−':''}${money(Math.abs(income))}</b><span class="muted">/s</span></div>`
     + side);
 }
 // Age-signature strip — the deployment panels collapsed to one-line chips; click a chip to expand its full controls.
 function renderSigStrip(){
   const sigs=[];
+  if((state.maxAge||1)>=2){ const vein=state.veinLeft>0;   // Prospect folds in here once past the early game
+    sigs.push({k:"prospect",ic:"🪨",nm:"Prospect",val:vein?"⚡surge":`${fmt(state.prospect||0)}/${PROSPECT_MAX}`,bonus:vein?`${Math.ceil(state.veinLeft)}s`:""}); }
   if((state.maxAge>=5)||(state.deployed>0)||((state.items.robot||0)>=1)) sigs.push({k:"workforce",ic:"🤖",nm:"Workforce",val:"×"+fmt(state.deployed||0),bonus:"+"+Math.round(workforceBonus()*100)+"%"});
   if((state.maxAge>=6)||(state.fleet>0)||((state.items.probe||0)>=1))     sigs.push({k:"fleet",ic:"🛰️",nm:"Fleet",val:fmt(state.fleet||0),bonus:"+"+Math.round(fleetBonus()*100)+"%"});
   if((state.maxAge>=7)||(state.dysonSwarm>0)||((state.items.dysonPanel||0)>=1)) sigs.push({k:"dyson",ic:"🔆",nm:"Swarm",val:fmt(state.dysonSwarm||0),bonus:fmt(dysonPower())+" MW"});
@@ -1701,11 +1807,13 @@ function updateUI(){
   el("bp").textContent=fmt(state.blueprints);
   el("clickAmt").textContent="+"+fmt(orePerClick());
   { const vein=state.veinLeft>0;
+    // Past the early game the meter folds into the signature chip strip (expand its 🪨 chip to see it inline again).
+    el("prospectRow").style.display=((state.maxAge||1)<2 || sigOpen.prospect)?"":"none";
     el("prospectBar").style.width=Math.min(100,(vein?1:(state.prospect||0)/PROSPECT_MAX)*100)+"%";
     el("prospectBar").style.background=vein?"var(--good)":"var(--accent)";
-    el("prospectHint").innerHTML=vein
+    setHTML(el("prospectHint"), vein
       ? `<span class="pos">⚡ Rich Vein: +${Math.round(VEIN_BONUS*100)}% raw extraction · ${Math.ceil(state.veinLeft)}s</span>`
-      : `Mine to strike a Rich Vein (${fmt(state.prospect||0)}/${PROSPECT_MAX})`; }
+      : `Mine to strike a Rich Vein (${fmt(state.prospect||0)}/${PROSPECT_MAX})`); }
   el("objective").innerHTML="🎯 "+currentObjective();
   { const ca=currentAge(), A=AGES[ca], g=AGE_GOALS[ca];
     const rec = state.maxAge>ca ? `record: Age ${ROMAN[state.maxAge]}` : (ca<MAX_AGE ? `next: Age ${ROMAN[ca+1]}` : "max age");
@@ -1797,6 +1905,7 @@ function updateUI(){
     chip.title=`making ${fmt(gp)}/s · capacity ${fmt(pot)}/s · net ${(net>=0?'+':'')+fmt(net)}/s · price ${money(price)}/unit (demand ${Math.round(df*100)}%)`;   // full detail on hover
   }
   // machines
+  let probCount=0;   // machines currently starved or backed up — badges the ⚠ Problems filter
   for(const k of MORDER){
     if(!state.unlocked[k]) continue;
     const m=MACHINES[k], count=state.machines[k]||0;
@@ -1815,6 +1924,7 @@ function updateUI(){
     else if(count>0)  st=`<span class="muted">≈ ${fmt((m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k))}${ITEMS[outId].ic}/s</span>`;
     setHTML(el("st-"+k), st);
     const mc=el("mc-"+k);
+    if(sFull || sStarved) probCount++;
     mc.classList.toggle("run", sRun); mc.classList.toggle("full", sFull); mc.classList.toggle("starv", sStarved);
     const fill = count>0 ? Math.min(1,(state.items[outId]||0)/capOf(outId)) : 0;   // output-buffer fill: full=backed up, low=flowing
     const tf=el("tfill-"+k); tf.style.width=Math.round(fill*100)+"%";
@@ -1839,7 +1949,8 @@ function updateUI(){
   }
   // machines chrome: active filter/density chips, compact mode, hidden headers when filtering, and age-collapse chevrons
   { const filtering=machineFilter!=="all";
-    for(const b of el("machineFilter").children) b.classList.toggle("on", b.dataset.mfil===machineFilter);
+    for(const b of el("machineFilter").children){ b.classList.toggle("on", b.dataset.mfil===machineFilter);
+      if(b.dataset.mfil==="prob") setText(b, probCount>0?`⚠ Problems (${probCount})`:"⚠ Problems"); }
     for(const b of el("machineDensity").children) b.classList.toggle("on", (b.dataset.dense==="1")===machineDense);
     el("machines").classList.toggle("compact", machineDense);
     el("machines").querySelectorAll(".tier-h").forEach(h=>h.style.display=filtering?"none":"");
@@ -2118,8 +2229,17 @@ function metaAuto(){
 /* =========================================================================
    SAVE / LOAD / OFFLINE
    ========================================================================= */
+let lastBackupAt = 0;
 function save(){ state.version=VERSION; state.lastSaved=Date.now();
-  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){} }
+  try{ const raw=JSON.stringify(state); localStorage.setItem(SAVE_KEY, raw);
+    // Rotating backups every 5 min (3 slots) — if the main save ever corrupts, load() falls back to these.
+    if(Date.now()-lastBackupAt > 5*60*1000){ lastBackupAt=Date.now();
+      const b1=localStorage.getItem(SAVE_KEY+"_bak1"), b2=localStorage.getItem(SAVE_KEY+"_bak2");
+      if(b2) localStorage.setItem(SAVE_KEY+"_bak3", b2);
+      if(b1) localStorage.setItem(SAVE_KEY+"_bak2", b1);
+      localStorage.setItem(SAVE_KEY+"_bak1", raw);
+    }
+  }catch(e){} }
 function migrate(s){
   const d=defaultState();
   const out=Object.assign(d,s);
@@ -2129,7 +2249,9 @@ function migrate(s){
   out.generators=Object.assign({},d.generators,s.generators||{});
   out.allocated=Object.assign({start:true}, s.allocated||{});
   out.milestones=Object.assign({}, s.milestones||{});
-  out.stats=Object.assign({built:0,bpEarned:0,allocs:0,produced:0,made:{},dmEarned:0}, s.stats||{});
+  out.stats=Object.assign({built:0,bpEarned:0,allocs:0,produced:0,made:{},dmEarned:0,playSec:0}, s.stats||{});
+  out.completedAt = s.completedAt||0;
+  out.notation = s.notation==="sci" ? "sci" : "compact";
   if(!out.stats.made) out.stats.made={};
   out.ageGoals=Object.assign({}, s.ageGoals||{});
   out.auto=Object.assign({}, s.auto||{});
@@ -2163,8 +2285,17 @@ function migrate(s){
   if(!out.marketItem) out.marketItem="ironOre";
   return out;
 }
-function load(){ let raw; try{raw=localStorage.getItem(SAVE_KEY);}catch(e){raw=null;}
-  if(!raw)return false; try{ state=migrate(JSON.parse(raw)); refreshUnlocks(true); return true; }catch(e){return false;} }
+function load(){
+  // Try the main save, then the rotating backups — a corrupted save can't eat a long run anymore.
+  for(const key of [SAVE_KEY, SAVE_KEY+"_bak1", SAVE_KEY+"_bak2", SAVE_KEY+"_bak3"]){
+    let raw; try{raw=localStorage.getItem(key);}catch(e){raw=null;}
+    if(!raw) continue;
+    try{ state=migrate(JSON.parse(raw)); refreshUnlocks(true);
+      if(key!==SAVE_KEY) setTimeout(()=>toast(`⚠ Main save was unreadable — restored from a backup (may be up to ~15 min old)`,"unlock"), 800);
+      return true;
+    }catch(e){}
+  }
+  return false; }
 function applyOffline(){
   const away=(Date.now()-(state.lastSaved||Date.now()))/1000; if(away<5)return;
   const eff=offlineEff(), t=Math.min(away,offlineCap());
@@ -2245,6 +2376,7 @@ function jumpToMachine(target){
     for(const k of MORDER){ if(MACHINES[k].out && MACHINES[k].out[target]!==undefined){ key=k; break; } }   // the machine that makes the scarce item
   }
   machineFilter="all";   // clear any filter so the target card is on screen
+  if(key){ const ag=TIER_AGE[MACHINES[key].t]; if(ageCollapsed[ag]) delete ageCollapsed[ag]; }   // un-fold its age group too
   updateUI();
   const card=key&&el("mc-"+key);
   if(card){ card.scrollIntoView({behavior:"smooth",block:"center"}); card.classList.add("flash"); setTimeout(()=>card&&card.classList.remove("flash"),1500); }
@@ -2310,6 +2442,8 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.41.0","The polish update — seven improvements across the whole game. (1) 🏆 Reaching the summit now means something: mastering the Transcendence Age fires a proper <b>completion celebration</b> with a lifetime recap of your journey. (2) ♾️ A new <b>Paradox Engine</b> in Ascension — an endless Dark Matter sink that strengthens your Ascendant Foundation with every level, so ascending never stops paying. (3) ⏱ <b>Rush orders</b>: some contracts now pay 4.5–6.5× market but expire in minutes — watch the countdown. (4) 🌳 The Advancement tree got a real UX pass: a <b>search box</b> (matches glow, everything else dims), a <b>cheapest-path preview</b> when you hover any distant node (the route lights up and the tooltip shows its total cost), and a <b>Σ summary line</b> of everything your allocated nodes add up to. (5) ⌨️ <b>Keyboard shortcuts</b> — keys 1–8 switch tabs, B cycles the buy mode. (6) 🔢 A <b>notation toggle</b> in Stats for scientific numbers (1.23e9). (7) 🛟 <b>Automatic save backups</b> — the game keeps three rotating backups and restores from them if your save ever corrupts. Plus: the 🪨 Prospect meter folds into the signature strip once you're past the early game."],
+  ["0.40.6","Review sweep — five fixes from a full code &amp; UI audit. (1) The health bar's <b>Find ↓</b> now un-folds a collapsed age group so it can actually show you the machine. (2) Contracts asking for goods that got re-locked by a Restructure or Ascension now auto-reroll instead of sitting dead on the board. (3) The health bar shows <b>net income</b> honestly — red and negative while Auto-Build is spending heavily, instead of a misleading $0. (4) The ⚠ Problems filter shows a live count of machines that need attention. (5) The locked-age banner spans the full row instead of squishing into one column."],
   ["0.40.5","Fixed the Contracts <b>Fulfill</b> button not responding. The delivery count ticks up every moment you produce the item, and the whole contract row (buttons included) was being rebuilt each time — so a click landed on a button that had just been replaced. The rows are now built once and only the count updates, so Fulfill and Skip work on the first click."],
   ["0.40.4","You can respec the tree again with Blueprint Autopilot on. Before, the autopilot would instantly re-allocate everything the moment you refunded, so a respec never stuck. Now respeccing automatically pauses the autopilot (you're told, and it holds), and every Ascension automation has a <b>⏸ Pause / ▶ Resume</b> toggle in the 🌑 Ascension tab — so you can turn Blueprint Autopilot (or any of them) off, re-path your tree by hand, and switch it back on when you're done."],
   ["0.40.3","Fixed the buttons sometimes needing a few clicks to register. The screen refreshes ~10×/second, and every refresh was rebuilding each button's contents from scratch — so if your click landed in that split-second, the browser threw it away. Now the game only touches a button when something about it actually changed, so Build, Mk, Fulfill, and the rest respond on the first click. (It's lighter on your device, too.)"],
@@ -2390,16 +2524,20 @@ function wire(){
     cam.z=Math.max(0.3,Math.min(1.7, cam.z*(e.deltaY<0?1.12:0.89)));
     cam.x=mx-(mx-cam.x)*(cam.z/old); cam.y=my-(my-cam.y)*(cam.z/old); applyCam(); }, {passive:false});
   tsvg.addEventListener("mousemove",e=>{ const g=e.target.closest("[data-node]");
-    if(!g){ ttip.style.display="none"; return; } const id=g.dataset.node, n=NODES[id], alloc=state.allocated[id];
-    let stt;
+    if(!g){ ttip.style.display="none"; clearPathHighlight(); return; } const id=g.dataset.node, n=NODES[id], alloc=state.allocated[id];
+    let stt, pathLine="";
     if(treeMode==="refund" && alloc && id!=="start") stt = removable(id)?`<span class="warn">click to refund +${n.cost} 📐</span>`:'<span class="neg">can’t refund — path needed</span>';
     else if(alloc) stt='<span class="pos">✓ allocated</span>';
     else if(nodeAvailable(id)) stt=(state.blueprints>=n.cost?'<span class="warn">available</span>':'<span class="neg">not enough 📐</span>');
     else stt='<span class="muted">locked</span>';
-    ttip.innerHTML=`<b>${n.name}</b> <span class="muted">${n.type}</span><br>${n.desc}${n.type==="start"?"":`<br>Cost: 📐 ${n.cost} · ${stt}`}`;
+    // Cheapest-path preview: highlight how to reach a distant node and what the whole path costs.
+    if(!alloc && id!=="start"){ const res=cheapestPathTo(id); showPathHighlight(res);
+      if(res && res.path.length>1) pathLine=`<br><span class="warn">Path: ${res.path.length} nodes · 📐 ${fmt(res.cost)} total</span>`;
+    } else clearPathHighlight();
+    ttip.innerHTML=`<b>${n.name}</b> <span class="muted">${n.type}</span><br>${n.desc}${n.type==="start"?"":`<br>Cost: 📐 ${n.cost} · ${stt}`}${pathLine}`;
     const r=twrap.getBoundingClientRect(); ttip.style.display="block";
     ttip.style.left=Math.min(r.width-235,(e.clientX-r.left)+14)+"px"; ttip.style.top=((e.clientY-r.top)+14)+"px"; });
-  tsvg.addEventListener("mouseleave",()=>{ ttip.style.display="none"; });
+  tsvg.addEventListener("mouseleave",()=>{ ttip.style.display="none"; clearPathHighlight(); });
   el("treeZoomIn").addEventListener("click",()=>{ cam.z=Math.min(1.7,cam.z*1.15); applyCam(); });
   el("treeZoomOut").addEventListener("click",()=>{ cam.z=Math.max(0.3,cam.z*0.87); applyCam(); });
   el("treeReset").addEventListener("click",()=>{ cam.z=0.55; centerTree(); });
@@ -2407,6 +2545,17 @@ function wire(){
   tmodes.forEach(b=>b.addEventListener("click",()=>{ treeMode=b.dataset.tmode; tmodes.forEach(x=>x.classList.toggle("on",x===b)); renderTree(); }));
   tmodes.forEach(b=>b.classList.toggle("on", b.dataset.tmode==="alloc"));
   el("treeRespec").addEventListener("click",respecAll);
+  el("treeSearch").addEventListener("input",e=>{ treeSearch=e.target.value.trim().toLowerCase(); renderTree(); });
+  // Keyboard shortcuts: 1–8 switch tabs, B cycles the buy mode. Never while typing in a field.
+  window.addEventListener("keydown",e=>{
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
+    const t=e.target; if(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable)) return;
+    if(e.key>="1" && e.key<="8"){ const b=document.querySelectorAll("nav [data-tab]")[+e.key-1];   // fixed positions (a hidden tab's number just no-ops)
+      if(b && getComputedStyle(b).display!=="none") b.click(); }
+    else if(e.key==="b"||e.key==="B"){ const order=["1","10","max"], nb=order[(order.indexOf(buyMode)+1)%order.length];
+      el("buymode").querySelector(`[data-mode="${nb}"]`).click(); }
+  });
+  document.querySelectorAll("nav [data-tab]").forEach((b,i)=>{ b.title=`Shortcut: ${i+1}`; });
   el("btnWarehouse").addEventListener("click",buildWarehouse);
   el("btnMarket").addEventListener("click",buildMarket);
   el("btnMarketMk").addEventListener("click",mkMarket);
@@ -2460,6 +2609,8 @@ function wire(){
   el("btnSave").addEventListener("click",()=>{save();toast("Saved.");});
   el("agebar").style.cursor="pointer"; el("agebar").title="View the Ages roadmap";
   el("agebar").addEventListener("click",()=>openModal(ageRoadmap()));
+  el("btnNotation").addEventListener("click",()=>{ state.notation = state.notation==="sci" ? "compact" : "sci";
+    toast(`Notation: ${state.notation==="sci"?"scientific (1.23e9)":"compact (1.23B)"}`); updateUI(); });
   el("btnChangelog").addEventListener("click",()=>openModal(
     `<h3>📜 Changelog</h3><ul>${CHANGELOG.map(c=>`<li><b>v${c[0]}</b> — ${c[1]}</li>`).join("")}</ul>
      <div class="rw"><button class="primary" data-close>Close</button></div>`));

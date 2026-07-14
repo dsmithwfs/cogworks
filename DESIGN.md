@@ -173,6 +173,10 @@ right down). Board auto-refills to 3 distinct items; `Skip` rerolls one. *Interl
 **spikes** riding on Layers 1–2 — a moving "best thing to make right now" that rewards a flexible factory and
 doubles as a demand-management tool (route a saturated glut into a contract instead of the sagging market).
 
+**Rush orders (v0.41.0):** ~25% of generated contracts are ⏱ **rush** — premium jumps to 4.5–6.5× but the
+contract expires (`c.exp`, wall-clock 4–8 min; swept in `refillContracts`, live countdown on the row). The
+board's first real *tension*: re-route production now or let it lapse.
+
 **Balance:** Layer 1 raised income (top prices ~2.5×), Layer 2 pulled it back down and *lengthened* the narrow
 top-end (its few markets saturate) — the two roughly offset, so `test/pace.js` pacing held near baseline (era 1
 ~12h, push-to-VIII 1.9h→6.1h). Contracts are optional active income **not** modelled by the sims (rewards kept
@@ -411,6 +415,9 @@ both call. `dmCost = cost·(lvl+1)`; most are one-time unlocks (`max:1`), Genesi
 Each owned automation is **pausable** (`state.dmOff`, `dmActive = dmHas && !dmOff` gates `metaAuto`/`freshRun`;
 ⏸ Pause/▶ Resume toggle in the tab) — and a **respec auto-pauses Blueprint Autopilot** (`respecAll`) so the refund
 sticks instead of being instantly re-allocated (v0.40.4).
+**Paradox Engine (v0.41.0)** — the endless Dark Matter sink once the 6 core automations are owned (~148 DM):
+`max:99`, each level ×`(1+0.25·lvl)` on the Ascendant Foundation's seed size + credits. Keeps Ascension paying
+forever without becoming a +% stat shop (it feeds the cross-era engine, not `st()`).
 **Kept across Ascension:** the age *record* (`maxAge` → permanent +10%/age dividend), mastery, achievements,
 Dark Matter. The loop: climb → ascend → come back with the grind **running itself**, go deeper, repeat.
 **UI:** 🌑 Ascension tab (hidden until unlocked).
@@ -519,7 +526,13 @@ off by default, and reads live state without perturbing it.
   red), status, **Build ×N** + **Mk↑** + **Auto** buttons.
 - **⚡ Power** — grid supply/demand/load bar; generator build cards (Build + Auto).
 - **📦 Storage & Trade** — Warehouses; Trade Terminal build/upgrade + sell-target select.
-- **🌳 Advancements** — the pan/zoom passive tree; click nodes to allocate Blueprints.
+- **🌳 Advancements** — the pan/zoom passive tree; click nodes to allocate Blueprints. UX pass (v0.41.0):
+  **search box** (`treeSearch` — matches glow green, everything else dims), **cheapest-path preview** on hover
+  (`cheapestPathTo` = Dijkstra from the allocated frontier, weight = node cost; route highlighted + total cost
+  in the tooltip), and a **Σ summary line** (`renderTreeSummary`) of all allocated effects. QoL elsewhere:
+  keyboard shortcuts (1–8 tabs, B = buy-mode), a scientific-notation toggle (`state.notation` in `fmt`), the
+  completion celebration (`showCompletion` on final-age mastery, `state.completedAt`), rotating 3-slot save
+  backups (`save`/`load`, 5-min cadence), and the Prospect meter folding into the signature strip past Age II.
 - **🎯 Talents** — tier-grouped ranked talents spent with Talent Points (efficiency/cost cuts).
 - **⚛ Patents** — File Patent (deep reset) + permanent patent upgrades (locked until 50 BP earned).
 - **📊 Stats** — totals, the **Achievements** grid, offline info, Save/Export/Import/Changelog/Hard-reset.

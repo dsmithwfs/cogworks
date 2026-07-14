@@ -23,8 +23,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # checkout@v5 targets Node 24 (v4 triggered the runner's Node-20 deprecation warning). The pages
+      # actions below are on their latest majors; their warnings clear when upstream ships Node-24 builds.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site artifact
