@@ -28,7 +28,7 @@ const EXPORTS = [
   "VALUE_MARKUP", "deriveSellValues",
   "DEMAND_FLOOR", "DEMAND_DEPTH_K", "DEMAND_REGEN", "demandDepth", "demandFactor", "unitPrice", "sellValue", "demandSat",
   "CONTRACT_SLOTS", "CONTRACT_PREMIUM", "CONTRACT_QTY", "genContract", "refillContracts", "fulfillContract", "skipContract", "contractsUnlocked",
-  "RUSH_CHANCE", "RUSH_PREMIUM", "RUSH_TIME", "fmt", "cheapestPathTo",
+  "RUSH_CHANCE", "RUSH_PREMIUM", "RUSH_TIME", "fmt", "cheapestPathTo", "prodRate", "CONTRACT_RATE_SEC", "CONTRACT_COOLDOWN",
   "START_MACHINES", "START_ITEMS", "NODES", "EDGES", "MILESTONES", "TALENTS", "TIER_REQ",
   "defaultState", "freshRun", "migrate",
   "recomputeStats", "st",

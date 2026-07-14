@@ -134,6 +134,13 @@
   g.dimmed{opacity:.18}                                     /* non-matching nodes while searching */
   .tnode.hipath{stroke:var(--accent2);stroke-width:4}       /* cheapest-path preview to the hovered node */
   .tedge.hipath{stroke:var(--accent2);stroke-width:3.5;opacity:1}
+  .khalo{fill:none;stroke:var(--accent);opacity:.4;stroke-width:2;pointer-events:none}   /* keystone halo ring */
+  @keyframes npulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.3}}
+  .tnode.avail{animation:npulse 1.8s ease-in-out infinite}                                /* frontier nodes breathe */
+  .tchips{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 8px}
+  .tchip{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:3px 9px;font-size:11.5px;color:var(--muted)}
+  .tchip b{color:var(--good);font-weight:600}
+  .tchip.mech{color:#b98cff;border-color:#4a3f66}
   .tnode.t-keystone{fill:#271f3d;stroke:#6b4fb0}
   .tnode.t-keystone.avail{stroke:var(--accent2)}
   .tnode.t-keystone.on{fill:#b98cff;stroke:#fff}
@@ -440,8 +447,9 @@
     </div>
 
     <div class="panel" id="contractPanel" style="display:none">
-      <h2>📦 Contracts <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— premium buyers. Deliver the requested goods for a payout well above market value; it also cools that item's market right down. Fulfilling from stock, or skip one to reroll it.</span></h2>
+      <h2>📦 Contracts <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— premium buyers. Deliver the requested goods for a payout well above market value; it also cools that item's market right down. Fulfilling from stock, or skip one to reroll it. Orders scale with your production, and new buyers take a moment to arrive.</span></h2>
       <div id="contractList"></div>
+      <div class="muted" id="contractCooldown" style="font-size:12px;padding:2px 4px"></div>
     </div>
   </section>
 
@@ -459,7 +467,7 @@
           <button class="zbtn" id="treeReset">⟳</button>
         </span>
       </h2>
-      <div class="muted" id="treeSummary" style="font-size:12px;margin:-4px 0 8px"></div>
+      <div class="tchips" id="treeSummary"></div>
       <div class="treeWrap" id="treeWrap">
         <svg id="treeSvg" width="100%" height="100%"></svg>
         <div class="treeTip" id="treeTip"></div>
@@ -531,7 +539,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.41.0";
+const VERSION = "0.43.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -574,7 +582,7 @@ const AGE_GOALS = [ null,
 // Hard age-gate: an age's machines stay LOCKED until you've earned this many 📐 Blueprints TOTAL
 // (a permanent, prestige-only metric). Ages I–III are free; IV+ require Restructuring to advance —
 // this is what makes prestige mandatory. Already-built machines are never re-locked. (index = age)
-const AGE_REQ = [0, 0, 0, 0, 10, 80, 400, 1200, 2800];   // total Blueprints earned to unlock each age (v0.30.0: spread ages across the journey)
+const AGE_REQ = [0, 0, 0, 4, 15, 80, 400, 1200, 2800];   // total Blueprints earned to unlock each age (v0.42.0: Age III gated too — the early ages flew by, and an early gate teaches the Restructure loop in the first hour)
 const AGE_DM  = [0, 0, 0, 0, 0, 0, 0, 0, 30];            // LIFETIME Dark Matter earned to unlock each age — only Age VIII is DM-gated (the cross-era progression destination; Age VII stays push-reachable so Ascension isn't deadlocked)
 const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet", "🔆 Dyson Swarm", "🌀 Reality Forking"];  // per-age signature label (for the roadmap)
 
@@ -756,12 +764,26 @@ const TREE_SPECIALS = {
   ind: { 8:  N("Economies of Scale","+2% production per 100 machines you've built",{prodPerMachine:.02},28),
          12: N("Redline","+90% production — but +45% power demand",{prod:.9,powerdraw:.45},48),
          16: N("Frictionless Chains","Machines never backpressure — they run full-speed even into full buffers (overflow is discarded)",{noBackpressure:1},80) },
-  log: { 12: N("Vertical Integration","Each Warehouse also gives +1.5% production",{whProd:.015},40) },
-  pow: { 11: N("Autonomous Mining","Raw extractors (miners, drills, quarries) ignore the power grid entirely",{rawFree:1},45) },
-  com: { 12: N("Diversified Portfolio","+3% sale value per unlocked item type",{sellPerItem:.03},40) },
-  eng: { 8:  N("Ancestral Knowledge","+5% production per age you've reached",{prodPerAge:.05},28) },
-  asc: { 12: N("Compound Interest","+4% Blueprints per Restructure per age reached",{bpPerAge:.04},44) },
+  log: { 8:  N("Cross-Docking","Trade Terminals sell 75% faster",{marketRate:.75},30),
+         12: N("Vertical Integration","Each Warehouse also gives +1.5% production",{whProd:.015},40),
+         16: N("Deep Reserves","Overstock mode sells everything above 70% of cap (instead of 90%) — far more auto-clearing",{overstockKeep:1},65) },
+  pow: { 8:  N("Flash Capacitors","Accumulators bank surplus power twice as fast",{accCharge:1},30),
+         11: N("Autonomous Mining","Raw extractors (miners, drills, quarries) ignore the power grid entirely",{rawFree:1},45),
+         16: N("Superconductors","+4 MW free grid per age you've reached",{gridPerAge:4},70) },
+  com: { 8:  N("Trade Contacts","Contracts pay 40% more",{contractPay:.4},30),
+         12: N("Diversified Portfolio","+3% sale value per unlocked item type",{sellPerItem:.03},40),
+         16: N("Market Makers","Markets recover from saturation twice as fast",{demandRegen:1},70) },
+  eng: { 8:  N("Ancestral Knowledge","+5% production per age you've reached",{prodPerAge:.05},28),
+         12: N("Master Machinists","Every Mk level gives +65% output instead of +50%",{mkBoost:.15},48),
+         16: N("Geologist's Eye","Rich Veins from Prospecting last twice as long",{veinDur:1},60) },
+  asc: { 8:  N("Patent Attorneys","Patents cost 25% less",{patentDiscount:.25},32),
+         12: N("Compound Interest","+4% Blueprints per Restructure per age reached",{bpPerAge:.04},44),
+         16: N("Event Horizon","+1 🌑 Dark Matter every time you Ascend",{dmFlat:1},85) },
 };
+for(const a in TREE_SPECIALS) for(const r in TREE_SPECIALS[a]) TREE_SPECIALS[a][r].special=1;   // specials get their own shape on the canvas
+// Per-arm visual identity (sector tint, label icon) — makes the radial layout legible at a glance.
+const ARM_COLOR = {ind:"#f5a623", log:"#6fd0c0", pow:"#6fe0ff", com:"#5ad17a", eng:"#b98cff", asc:"#ff86b3"};
+const ARM_ICON  = {ind:"⚙️", log:"📦", pow:"⚡", com:"💹", eng:"🔧", asc:"✨"};
 function genNode(stat, mult, cost, notable, g, ri, tag){
   const v = stat.flat ? Math.round(stat.v*mult) : +(stat.v*mult).toFixed(3);
   const desc = stat.flat ? `+${v} ${stat.label}` : `+${Math.round(v*100)}% ${stat.label}`;
@@ -833,14 +855,23 @@ const MILESTONES = [
 ];
 const STAT_LABEL={prod:"production",input:"inputs",cap:"storage",sell:"sale value",build:"build cost",
   mkcost:"Mk cost",power:"generator output",fuel:"fuel use",bp:"Blueprints",offeff:"offline rate",
-  rawcost:"raw material cost"};
+  rawcost:"raw material cost",contractPay:"contract payouts",demandRegen:"market recovery",
+  marketRate:"terminal throughput",accCharge:"accumulator charging",mkBoost:"Mk effectiveness",
+  veinDur:"Rich Vein duration",patentDiscount:"patent cost",
+  prodPerAge:"production per age",prodPerMachine:"production per 100 machines",sellPerItem:"sale value per item type",
+  bpPerAge:"Blueprints per age",whProd:"production per warehouse",powerdraw:"power demand"};
 function effText(eff){ return Object.keys(eff).map(k=>{
   if(k==="grid") return `+${eff[k]} MW grid`;
   if(k==="offcap") return `+${eff[k]}h offline cap`;
   if(k==="click") return `+${eff[k]} ore/click`;
   if(k==="kick") return `starting boost`;
   if(k==="auto") return `unlocks Auto-Build`;
-  const neg=["input","build","mkcost","fuel","rawcost"].includes(k);
+  if(k==="gridPerAge") return `+${eff[k]} MW grid per age`;
+  if(k==="dmFlat") return `+${eff[k]} 🌑 per Ascension`;
+  if(k==="overstockKeep") return `overstock sells above 70%`;
+  if(k==="noBackpressure") return `machines never backpressure`;
+  if(k==="rawFree") return `raw extractors need no power`;
+  const neg=["input","build","mkcost","fuel","rawcost","patentDiscount"].includes(k);
   return `${neg?"−":"+"}${Math.round(eff[k]*100)}% ${STAT_LABEL[k]||k}`;
 }).join(", "); }
 
@@ -882,7 +913,7 @@ const PATENTS = [
 ];
 const PATENT_UNLOCK = 15;                          // total Blueprints ever earned to unlock the layer
 const PATENT_SCALE = 50;                           // Blueprints-this-cycle per √ Patent
-const patentCost = (p,lvl) => p.base * (lvl+1);
+const patentCost = (p,lvl) => Math.max(1, Math.round(p.base * (lvl+1) * (1-st("patentDiscount"))));   // Patent Attorneys node
 const patentAvailable = () => Math.floor(Math.sqrt((state.bpCycle||0)/PATENT_SCALE));
 const patentsUnlocked = () => (state.stats.bpEarned||0) >= PATENT_UNLOCK || (state.patents||0) > 0;
 
@@ -920,7 +951,9 @@ const OVERSTOCK_KEEP = 0.9;                         // overstock mode leaves thi
 // SPIKES riding on top of Layers 1–2: a moving "best thing to make right now" that rewards a flexible factory.
 const CONTRACT_SLOTS = 3;                            // how many contracts sit on the board at once
 const CONTRACT_PREMIUM = [2.0, 4.0];                 // reward = qty × base value × (random premium in this range)
-const CONTRACT_QTY = [0.6, 1.6];                     // qty ≈ (random in this range) × the item's storage cap
+const CONTRACT_QTY = [0.6, 1.6];                     // qty ≈ (random in this range) × the item's storage cap — the FLOOR; production scales it up (below)
+const CONTRACT_RATE_SEC = [60, 150];                 // ...or (random range) × your production/s of the item, whichever is BIGGER — keeps contracts a real ask at any scale
+const CONTRACT_COOLDOWN = 25000;                     // ms before an emptied slot refills (fulfil/skip) — no more spam-chaining free money
 const RUSH_CHANCE = 0.25, RUSH_PREMIUM = [4.5, 6.5], RUSH_TIME = [240, 480];   // rush orders: much richer, but expire (real-time seconds)
 let contractSeq = 0;
 function genContract(){
@@ -929,7 +962,11 @@ function genContract(){
   // Uniform pick across unlocked items — deliberately includes goods you DON'T currently make (a diversification nudge).
   const id = pool[Math.floor(Math.random()*pool.length)];
   const cap = ITEMS[id].cap;
-  const qty = Math.max(5, Math.round(cap * (CONTRACT_QTY[0] + Math.random()*(CONTRACT_QTY[1]-CONTRACT_QTY[0]))));
+  // Quantity = the LARGER of a cap-based ask and 1–2.5 min of your current output of the item. Early game the cap
+  // floor dominates (unchanged); late game production dominates, so orders stay a real dent instead of pocket change.
+  const capQty  = cap * (CONTRACT_QTY[0] + Math.random()*(CONTRACT_QTY[1]-CONTRACT_QTY[0]));
+  const rateQty = (prodRate[id]||0) * (CONTRACT_RATE_SEC[0] + Math.random()*(CONTRACT_RATE_SEC[1]-CONTRACT_RATE_SEC[0]));
+  const qty = Math.max(5, Math.round(Math.max(capQty, rateQty)));
   // Rush orders: a chance of a much richer contract that EXPIRES — a real-time demand spike worth re-routing for.
   const rush = Math.random() < RUSH_CHANCE;
   const pr = rush ? RUSH_PREMIUM : CONTRACT_PREMIUM;
@@ -945,20 +982,22 @@ function refillContracts(){
   const now=Date.now();
   for(const c of state.contracts) if(c.exp && c.exp<now) toast(`⏱ Rush order expired — ${ITEMS[c.item]?ITEMS[c.item].n:c.item}`);
   state.contracts=state.contracts.filter(c=>ITEMS[c.item] && itemUnlocked(c.item) && !(c.exp && c.exp<now));   // drop stale (re-locked item) + expired rush contracts; they auto-reroll below
+  if(now < (state.contractNext||0)) return;          // emptied-slot cooldown (set by fulfil/skip) — buyers take a moment to return
   let guard=0;
   while(state.contracts.length < CONTRACT_SLOTS && guard++ < 20){ const c=genContract(); if(!c) break; state.contracts.push(c); }
 }
 function fulfillContract(cid){
   const i=state.contracts.findIndex(c=>c.cid===cid); if(i<0) return;
   const c=state.contracts[i]; if((state.items[c.item]||0) < c.qty) return;
-  state.items[c.item]-=c.qty; addCredits(c.reward);
+  const pay=Math.round(c.reward*(1+st("contractPay")));   // Trade Contacts node: richer payouts
+  state.items[c.item]-=c.qty; addCredits(pay);
   demandSat[c.item]=0;                               // the buyer absorbed the glut — this market cools right down
-  state.contracts.splice(i,1); refillContracts();
-  SND.goal(); toast(`📦 Contract filled — ${fmt(c.qty)} ${ITEMS[c.item].n} → ${money(c.reward)}`, "unlock"); updateUI();
+  state.contracts.splice(i,1); state.contractNext=Date.now()+CONTRACT_COOLDOWN; refillContracts();
+  SND.goal(); toast(`📦 Contract filled — ${fmt(c.qty)} ${ITEMS[c.item].n} → ${money(pay)}`, "unlock"); updateUI();
 }
 function skipContract(cid){
   const i=state.contracts.findIndex(c=>c.cid===cid); if(i<0) return;
-  state.contracts.splice(i,1); refillContracts(); updateUI();
+  state.contracts.splice(i,1); state.contractNext=Date.now()+CONTRACT_COOLDOWN; refillContracts(); updateUI();
 }
 const contractsUnlocked = () => (state.markets||0) > 0 || (state.prestiges||0) > 0;   // available once you're trading
 
@@ -1079,8 +1118,8 @@ const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
 const marketMult   = () => 1 + st("sell") + st("sellPerItem")*unlockedItemCount();   // SYNERGY node: +sale value per unlocked item
 // Market demand (Layer 2). DEMAND_FLOOR = worst price when a market is fully flooded; DEPTH_K scales how much you
 // can sell before it saturates (∝ storage cap — abundant goods have deep markets); REGEN = proportional recovery/s.
-const DEMAND_FLOOR = 0.3, DEMAND_DEPTH_K = 3, DEMAND_REGEN = 0.05;
-const demandDepth  = id => ITEMS[id].cap * DEMAND_DEPTH_K;
+const DEMAND_FLOOR = 0.3, DEMAND_DEPTH_K = 3, DEMAND_REGEN = 0.05, DEMAND_DEPTH_SEC = 30;
+const demandDepth  = id => ITEMS[id].cap * DEMAND_DEPTH_K + (prodRate[id]||0)*DEMAND_DEPTH_SEC;   // depth grows with your output — markets stay meaningful (not floor-pinned) at scale
 const demandFactor = id => DEMAND_FLOOR + (1-DEMAND_FLOOR)*(1 - Math.min(1, demandSat[id]||0));   // price multiplier ∈ [FLOOR, 1]
 const unitPrice    = id => ITEMS[id].sell * marketMult() * demandFactor(id);                       // live per-unit sale value
 // Sell `qty` of an item: prices it at the AVERAGE demand factor across the sat range the sale traverses (a linear
@@ -1111,10 +1150,10 @@ const FLEET_CAP_MULT = 20, FLEET_REPLICATE = 0.03, FLEET_MULT = 0.15;
 const fleetCap   = () => (state.launched||0) * FLEET_CAP_MULT;
 const fleetBonus = () => FLEET_MULT * Math.log10(1 + (state.fleet||0));   // +production (colonies send back resources)
 const capOf        = id => Math.floor(ITEMS[id].cap * capMult());
-const mkMult       = id => 1 + 0.5*(state.mk[id]||0);
+const mkMult       = id => 1 + (0.5+st("mkBoost"))*(state.mk[id]||0);   // Master Machinists: Mk levels hit harder
 const bpFor        = rc => Math.floor(Math.pow(Math.max(0,rc)/PRESTIGE_SCALE, 0.6) * (1 + st("bp") + st("bpPerAge")*(state.maxAge||1)));   // +bpPerAge: SYNERGY node
 const genMult      = () => 1 + st("power");        // generator output multiplier
-const gridBase     = () => BASE_GRID + st("grid"); // free MW
+const gridBase     = () => BASE_GRID + st("grid") + st("gridPerAge")*(state.maxAge||1); // free MW (Superconductors: + per age)
 const fuelMult     = () => Math.max(0.25, 1 - st("fuel"));
 const demandMult   = () => 1 + st("powerdraw");
 const smeltMult    = () => 1 + st("smelt");        // smelter-only output bonus (furnaces, mills, foundry)
@@ -1244,7 +1283,7 @@ function computePower(dt){
   let ratio;
   if(supply >= demand){
     ratio = 1;
-    charge = Math.min(cap, charge + (supply - demand) * dt);
+    charge = Math.min(cap, charge + (supply - demand) * dt * (1+st("accCharge")));   // Flash Capacitors: bank surplus faster
   } else {
     const use = Math.min(charge, (demand - supply) * dt);
     charge -= use;
@@ -1260,7 +1299,7 @@ function simulate(dt, eff){
   const pr = computePower(dt);                       // power throttles every consumer proportionally
   const rawFree = st("rawFree")>0;                   // MECHANIC node: raw extractors ignore the grid
   const noBP = st("noBackpressure")>0;               // MECHANIC node: machines don't throttle on full buffers (overflow discarded)
-  const decay = Math.max(0, 1 - DEMAND_REGEN*dt);    // markets recover toward full price (Layer 2 demand depth)
+  const decay = Math.max(0, 1 - DEMAND_REGEN*(1+st("demandRegen"))*dt);    // markets recover toward full price (Market Makers: faster)
   for(const id in demandSat){ if(demandSat[id]>1e-4) demandSat[id]*=decay; else demandSat[id]=0; }
   var m;
   for(const key of MORDER){
@@ -1282,12 +1321,12 @@ function simulate(dt, eff){
     if(fc>0 && state.fleet<fc) state.fleet=Math.min(fc, state.fleet + state.fleet*FLEET_REPLICATE*(1-state.fleet/fc)*dt); }
   // Trade terminals auto-sell: either one chosen item, or "overstock" (surplus above OVERSTOCK_KEEP of each cap)
   if(state.markets>0){
-    const thru = state.markets * MARKET.rate * (1+0.5*state.marketMk) * gr * dt;
+    const thru = state.markets * MARKET.rate * (1+0.5*state.marketMk) * (1+st("marketRate")) * gr * dt;   // Cross-Docking: faster terminals
     if(state.marketItem===MARKET_OVERSTOCK){
       let budget = thru * eff;
-      const over=[];
+      const over=[], okeep=st("overstockKeep")>0?0.7:OVERSTOCK_KEEP;   // Deep Reserves: lower keep-line
       for(const id in ITEMS){ if(!itemUnlocked(id)) continue;
-        const floor=capOf(id)*OVERSTOCK_KEEP, excess=(state.items[id]||0)-floor;
+        const floor=capOf(id)*okeep, excess=(state.items[id]||0)-floor;
         if(excess>1e-9) over.push({id, excess, fill:(state.items[id]||0)/capOf(id)}); }
       over.sort((a,b)=>b.fill-a.fill);              // relieve the most-backed-up buffers first
       for(const o of over){ if(budget<=1e-9) break; const q=Math.min(budget, o.excess);
@@ -1450,6 +1489,10 @@ function resetStructureDOM(){                      // force full rebuild of dyna
   el("ticker").innerHTML="";
   el("marketTable").dataset.sig="";
   el("contractList").dataset.csig="";
+  el("patentBody").dataset.psig="";
+  el("ascensionBody").dataset.asig="";
+  el("sigStrip").dataset.ssig="";
+  el("factoryHealth").dataset.fsig="";
   el("generators").dataset.count="";
 }
 function ensureTicker(){
@@ -1560,18 +1603,43 @@ let cam={x:0,y:0,z:0.55}, treeDrag=null, treeDragged=false, treeMode="alloc";
 function applyCam(){ const g=el("treeCam"); if(g) g.setAttribute("transform",`translate(${cam.x} ${cam.y}) scale(${cam.z})`); }
 function centerTree(){ const w=el("treeWrap"), ww=w.clientWidth||900, wh=w.clientHeight||560;
   cam.x=ww/2 - cam.z*CX; cam.y=wh/2 - cam.z*CY; applyCam(); }
+// Regular polygon point strings for the node shape language (hexagon = special, star = keystone).
+function hexPts(r){ let p=[]; for(let i=0;i<6;i++){ const a=(-90+i*60)*Math.PI/180; p.push((r*Math.cos(a)).toFixed(1)+","+(r*Math.sin(a)).toFixed(1)); } return p.join(" "); }
+function starPts(ro,ri){ let p=[]; for(let i=0;i<10;i++){ const a=(-90+i*36)*Math.PI/180, r=i%2?ri:ro; p.push((r*Math.cos(a)).toFixed(1)+","+(r*Math.sin(a)).toFixed(1)); } return p.join(" "); }
 function buildTree(){
   buildEdgeIndex();
-  let e=""; EDGES.forEach((ed,i)=>{ const a=NODES[ed[0]], b=NODES[ed[1]];
-    e+=`<line class="tedge" data-edge="${i}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`; });
-  let ns=""; for(const id in NODES){ const n=NODES[id];
-    const r=n.type==="start"?26:n.type==="keystone"?22:n.type==="notable"?15:9;
-    ns+=`<g data-node="${id}" transform="translate(${n.x} ${n.y})"><circle class="tnode t-${n.type}" r="${r}"></circle>`;
-    const ic=n.type==="start"?"⚙":n.type==="keystone"?"★":n.type==="notable"?"◆":"";
-    if(ic) ns+=`<text class="tic" font-size="${Math.round(r*1.05)}">${ic}</text>`;
-    ns+="</g>";
+  // Decoration layer (behind everything): faint ring guides + tinted arm sectors + arm labels with live progress.
+  let deco="";
+  for(let ri=4; ri<TREE_DEPTH; ri+=4){ const rad=ri*RING;
+    deco+=`<circle cx="${CX}" cy="${CY}" r="${rad}" fill="none" stroke="#1a1f2b" stroke-width="2"/>`
+        +`<text x="${CX+8}" y="${CY-rad+26}" font-size="24" fill="#333c4e">ring ${ri}</text>`;
   }
-  el("treeSvg").innerHTML=`<g id="treeCam">${e}${ns}</g>`;
+  for(const arm of ARMS){ const col=ARM_COLOR[arm.key]||"#f5a623";
+    const a=arm.angle*Math.PI/180, R=(TREE_DEPTH+0.6)*RING, h=26*Math.PI/180, a1=a-h, a2=a+h;
+    deco+=`<path d="M ${CX} ${CY} L ${(CX+Math.cos(a1)*R).toFixed(0)} ${(CY+Math.sin(a1)*R).toFixed(0)} A ${R} ${R} 0 0 1 ${(CX+Math.cos(a2)*R).toFixed(0)} ${(CY+Math.sin(a2)*R).toFixed(0)} Z" fill="${col}" opacity="0.045"/>`;
+    const lx=CX+Math.cos(a)*(TREE_DEPTH+1.3)*RING, ly=CY+Math.sin(a)*(TREE_DEPTH+1.3)*RING;
+    deco+=`<text x="${lx.toFixed(0)}" y="${ly.toFixed(0)}" font-size="44" font-weight="700" fill="${col}" opacity="0.9" text-anchor="middle">${ARM_ICON[arm.key]||""} ${ARM_GEN[arm.key].title.toUpperCase()}</text>`
+        +`<text id="armprog-${arm.key}" x="${lx.toFixed(0)}" y="${(ly+42).toFixed(0)}" font-size="28" fill="#6b7488" text-anchor="middle"></text>`;
+  }
+  let e=""; EDGES.forEach((ed,i)=>{ const a=NODES[ed[0]], b=NODES[ed[1]];
+    const cross = a.arm && b.arm && a.arm!==b.arm;                     // cross-arm weaves read differently
+    e+=`<line class="tedge" data-edge="${i}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"${cross?' stroke-dasharray="5 7"':''}/>`; });
+  let ns=""; for(const id in NODES){ const n=NODES[id];
+    let shape, icon="";
+    if(n.type==="keystone"){                                           // star + halo ring — the arm's crown
+      shape=`<polygon class="tnode t-keystone" points="${starPts(24,10)}"></polygon><circle class="khalo" r="30"></circle>`;
+    } else if(n.special){                                              // qualitative specials: hexagon + arm-coloured mark
+      shape=`<polygon class="tnode t-notable" points="${hexPts(16)}"></polygon>`;
+      icon=`<text class="tic" font-size="14" style="fill:${ARM_COLOR[n.arm]||"#ffca6b"}">◈</text>`;
+    } else {
+      const r=n.type==="start"?26:n.type==="notable"?15:9;
+      shape=`<circle class="tnode t-${n.type}" r="${r}"></circle>`;
+      const ic=n.type==="start"?"⚙":n.type==="notable"?"◆":"";
+      if(ic) icon=`<text class="tic" font-size="${Math.round(r*1.05)}">${ic}</text>`;
+    }
+    ns+=`<g data-node="${id}" transform="translate(${n.x} ${n.y})">${shape}${icon}</g>`;
+  }
+  el("treeSvg").innerHTML=`<g id="treeCam">${deco}${e}${ns}</g>`;
   cam.z=0.55; centerTree(); renderTree();
 }
 let treeSearch = "";                                   // tree search query (highlights matches, dims the rest)
@@ -1619,13 +1687,17 @@ function showPathHighlight(res){
   for(let i=0;i<ids.length-1;i++){ const ei=EDGE_IDX[ids[i]+"|"+ids[i+1]];
     if(ei!==undefined){ const l=svg.querySelector(`[data-edge="${ei}"]`); if(l){ l.classList.add("hipath"); pathHiEdges.push(l); } } }
 }
-// Σ of every allocated node's effects — makes the tree's total contribution legible at a glance.
+// Σ of every allocated node's effects, rendered as scannable chips; mechanics get their own callout.
+const MECH_KEYS = new Set(["noBackpressure","rawFree","overstockKeep","auto","kick"]);
 function renderTreeSummary(){
   const host=el("treeSummary"); if(!host) return;
-  const sum={};
+  const sum={}; let mech=0;
   for(const id in state.allocated){ if(!state.allocated[id]||id==="start") continue; const n=NODES[id]; if(!n) continue;
-    for(const k in n.eff) sum[k]=(sum[k]||0)+n.eff[k]; }
-  setHTML(host, Object.keys(sum).length ? `<b>Σ allocated:</b> ${effText(sum)}` : `Nothing allocated yet — spend 📐 Blueprints outward from the Core.`);
+    for(const k in n.eff){ if(MECH_KEYS.has(k)) mech++; else sum[k]=(sum[k]||0)+n.eff[k]; } }
+  const chips=Object.keys(sum).map(k=>{ const t=effText({[k]:sum[k]}), i=t.indexOf(" ");
+    return `<span class="tchip"><b>${t.slice(0,i)}</b>${t.slice(i)}</span>`; });
+  if(mech>0) chips.push(`<span class="tchip mech"><b>◈ ${mech}</b> mechanic${mech==1?"":"s"} active</span>`);
+  setHTML(host, chips.length ? chips.join("") : `<span class="tchip">Nothing allocated yet — spend 📐 Blueprints outward from the Core.</span>`);
 }
 function renderTree(){
   const svg=el("treeSvg"); if(!svg || !svg.firstChild) return;
@@ -1646,6 +1718,10 @@ function renderTree(){
   pathHiNodes=[]; pathHiEdges=[];                                   // class rewrites above cleared any highlight
   const total=Object.keys(NODES).length-1, got=Object.keys(state.allocated).filter(k=>k!=="start"&&state.allocated[k]).length;
   const ct=el("treeCount"); if(ct) ct.textContent=`${got}/${total} nodes · 📐 ${fmt(state.blueprints)}`;
+  // per-arm progress under each arm label
+  { const cnt={}, tot={};
+    for(const id in NODES){ const a=NODES[id].arm; if(!a) continue; tot[a]=(tot[a]||0)+1; if(state.allocated[id]) cnt[a]=(cnt[a]||0)+1; }
+    for(const k in ARM_GEN) setText(el("armprog-"+k), `${cnt[k]||0} / ${tot[k]||0}`); }
   renderTreeSummary();
 }
 let marketSort = "tier";       // "tier" (chain order) | "value" (base price high→low) | "az"
@@ -1680,7 +1756,7 @@ function ensureMarketTable(ids){
 function renderMarket(){
   const ids=marketVisibleIds();
   ensureMarketTable(ids);
-  const thru = state.markets>0 ? state.markets * MARKET.rate * (1+0.5*state.marketMk) * globalRate() : 0;
+  const thru = state.markets>0 ? state.markets * MARKET.rate * (1+0.5*state.marketMk) * (1+st("marketRate")) * globalRate() : 0;
   const income = Math.max(0, rate.credit||0);
   const tgt = state.marketItem===MARKET_OVERSTOCK ? "⚙️ Overstock" : (ITEMS[state.marketItem]? ITEMS[state.marketItem].ic+" "+ITEMS[state.marketItem].n : "—");
   setHTML(el("marketStats"), state.markets>0
@@ -1696,7 +1772,7 @@ function renderMarket(){
     setText(el("ms-"+id), fmt(have));
     const r=bar.closest(".mrow"); if(r){ r.classList.toggle("sel", state.marketItem===id);
       // "selling now" cue: single-item mode sells the target; overstock sells anything above the 90% keep-line.
-      const selling = active && (over ? (state.items[id]||0) > capOf(id)*OVERSTOCK_KEEP : state.marketItem===id && have>0);
+      const selling = active && (over ? (state.items[id]||0) > capOf(id)*(st("overstockKeep")>0?0.7:OVERSTOCK_KEEP) : state.marketItem===id && have>0);
       r.classList.toggle("selling", selling); }
   }
   const ov=el("marketTable").querySelector('.mrow.overstock'); if(ov) ov.classList.toggle("sel", over);
@@ -1711,13 +1787,14 @@ function renderContracts(){
   // Rebuild the rows ONLY when the contract set changes — so the Fulfill/Skip buttons stay stable and clicks land
   // (the "have" count ticks up every frame while you produce the item; rebuilding then would recreate the buttons
   //  mid-click and drop it).
-  const sig=list.map(c=>c.cid+":"+c.item+":"+c.qty+":"+c.reward).join(",");
+  const payMult=1+st("contractPay");
+  const sig=list.map(c=>c.cid+":"+c.item+":"+c.qty+":"+c.reward).join(",")+"|"+payMult;
   if(host.dataset.csig!==sig){
     host.dataset.csig=sig;
     host.innerHTML = list.map(c=>{ const it=ITEMS[c.item]; if(!it) return "";
       return `<div class="toolrow" style="align-items:center;border:1px solid ${c.exp?"var(--warn)":"var(--border)"};border-radius:8px;padding:8px 10px;margin:6px 0${c.exp?";background:rgba(255,180,84,.06)":""}">
         <span style="min-width:230px">${c.exp?`<b class="warn">⏱ RUSH</b> · `:""}${it.ic} Deliver <b>${fmt(c.qty)}</b> ${it.n} <span id="cq-${c.cid}"></span></span>
-        <span class="pos" style="min-width:120px">→ ${money(c.reward)}</span>
+        <span class="pos" style="min-width:120px">→ ${money(Math.round(c.reward*payMult))}</span>
         ${c.exp?`<span class="warn num" id="ct-${c.cid}" style="min-width:64px;font-size:12px"></span>`:""}
         <button class="b mk" data-fulfill="${c.cid}" id="cf-${c.cid}" style="max-width:130px">Fulfill</button>
         <button class="b" data-skip="${c.cid}" style="max-width:80px" title="Reroll this contract">Skip</button>
@@ -1729,21 +1806,36 @@ function renderContracts(){
     setHTML(el("cq-"+c.cid), `<span class="${can?'pos':'muted'}">(${fmt(have)}/${fmt(c.qty)})</span>`);
     if(c.exp) setText(el("ct-"+c.cid), dur(Math.max(0,(c.exp-Date.now())/1000)));
     const b=el("cf-"+c.cid); if(b) b.disabled=!can; }
+  const wait=(state.contractNext||0)-Date.now();
+  setText(el("contractCooldown"), (list.length<CONTRACT_SLOTS && wait>0) ? `Next buyer arrives in ${Math.ceil(wait/1000)}s…` : "");
 }
 // Factory health bar — whole-chain state at a glance: machine/running counts, power gauge, income, and a bottleneck alert.
 function renderFactoryHealth(){
   const built=Object.values(state.machines).reduce((a,c)=>a+c,0);
   let running=0; for(const k of MORDER){ if((state.machines[k]||0)>0 && rate[Object.keys(MACHINES[k].out)[0]]>0.001) running++; }
   const ch=chainHealth(), b=bottleneck(), pct=Math.round((lastPower.ratio||1)*100), income=rate.credit||0;   // signed net — heavy auto-build spending shows red instead of a misleading $0
-  let side;
-  if(ch.starved>0 && b) side=`<div class="health warn"><span class="neg">⚠ Bottleneck — ${ITEMS[b.id].ic} ${ITEMS[b.id].n} starved</span><button class="jump" data-jump="${b.id}">Find ↓</button></div>`;
-  else if(ch.full>0)    side=`<div class="health warn"><span class="warn">■ ${ch.full} machine${ch.full==1?"":"s"} backed up</span><button class="jump" data-jump="__full__">Find ↓</button></div>`;
-  else                  side=`<div class="health"><span class="pos">✓ chain flowing</span></div>`;
-  setHTML(el("factoryHealth"),
-     `<div class="cell"><span class="lbl">Machines</span><b class="num">${fmt(built)}</b> <span class="muted num">· ${fmt(running)} on</span></div>`
-    +`<div class="cell"><span class="lbl">Power</span><span class="num ${pct<100?'warn':'pos'}">${pct}%</span><div class="gauge"><div style="width:${Math.min(100,pct)}%;background:${pct<100?'var(--warn)':'var(--good)'}"></div></div></div>`
-    +`<div class="cell"><span class="lbl">Net income</span><b class="num ${income>=-0.01?'pos':'neg'}">${income<-0.01?'−':''}${money(Math.abs(income))}</b><span class="muted">/s</span></div>`
-    + side);
+  const host=el("factoryHealth");
+  // Static skeleton built once (keeps the Find↓ button stable); numbers flow into spans; the alert section
+  // rebuilds only when its MODE/TARGET changes, not when counts tick.
+  if(!host.dataset.fsig){ host.dataset.fsig="1";
+    host.innerHTML =
+       `<div class="cell"><span class="lbl">Machines</span><b class="num" id="fhM"></b> <span class="muted num" id="fhR"></span></div>`
+      +`<div class="cell"><span class="lbl">Power</span><span class="num" id="fhP"></span><div class="gauge"><div id="fhG"></div></div></div>`
+      +`<div class="cell"><span class="lbl">Net income</span><b class="num" id="fhI"></b><span class="muted">/s</span></div>`
+      +`<div id="fhSide" style="margin-left:auto"></div>`;
+  }
+  setText(el("fhM"), fmt(built)); setText(el("fhR"), "· "+fmt(running)+" on");
+  const p=el("fhP"); setText(p, pct+"%"); p.className="num "+(pct<100?"warn":"pos");
+  const g=el("fhG"); g.style.width=Math.min(100,pct)+"%"; g.style.background=pct<100?"var(--warn)":"var(--good)";
+  const inc=el("fhI"); setText(inc, (income<-0.01?"−":"")+money(Math.abs(income))); inc.className="num "+(income>=-0.01?"pos":"neg");
+  const side=el("fhSide");
+  const mode = (ch.starved>0 && b) ? "b|"+b.id : ch.full>0 ? "f" : "ok";
+  if(side.dataset.mode!==mode){ side.dataset.mode=mode;
+    if(mode.startsWith("b|")) side.innerHTML=`<div class="health warn"><span class="neg">⚠ Bottleneck — ${ITEMS[b.id].ic} ${ITEMS[b.id].n} starved</span><button class="jump" data-jump="${b.id}">Find ↓</button></div>`;
+    else if(mode==="f")       side.innerHTML=`<div class="health warn"><span class="warn">■ <span class="num" id="fhFull"></span> backed up</span><button class="jump" data-jump="__full__">Find ↓</button></div>`;
+    else                      side.innerHTML=`<div class="health"><span class="pos">✓ chain flowing</span></div>`;
+  }
+  if(mode==="f") setText(el("fhFull"), fmt(ch.full)+" machine"+(ch.full==1?"":"s"));
 }
 // Age-signature strip — the deployment panels collapsed to one-line chips; click a chip to expand its full controls.
 function renderSigStrip(){
@@ -1757,7 +1849,11 @@ function renderSigStrip(){
   const strip=el("sigStrip");
   if(!sigs.length){ strip.style.display="none"; return; }
   strip.style.display="";
-  setHTML(strip, sigs.map(s=>`<div class="sigchip ${sigOpen[s.k]?'open':''}" data-sig="${s.k}"><span class="ic">${s.ic}</span>${s.nm} <b>${s.val}</b> <span class="pos">${s.bonus}</span><span class="chev">${sigOpen[s.k]?'▴':'▾'}</span></div>`).join(""));
+  // Skeleton rebuilds only when the chip SET or open-states change; live values flow into stable spans (clicks land).
+  const ssig=sigs.map(s=>s.k+(sigOpen[s.k]?"+":"")).join(",");
+  if(strip.dataset.ssig!==ssig){ strip.dataset.ssig=ssig;
+    strip.innerHTML=sigs.map(s=>`<div class="sigchip ${sigOpen[s.k]?'open':''}" data-sig="${s.k}"><span class="ic">${s.ic}</span>${s.nm} <b id="sigv-${s.k}"></b> <span class="pos" id="sigb-${s.k}"></span><span class="chev">${sigOpen[s.k]?'▴':'▾'}</span></div>`).join(""); }
+  for(const s of sigs){ setText(el("sigv-"+s.k), s.val); setText(el("sigb-"+s.k), s.bonus); }
 }
 function ensureGenerators(){
   const host=el("generators"); const cnt=GORDER.filter(genUnlocked).length;
@@ -2037,38 +2133,58 @@ function updateUI(){
     }
   }
   // patents (deep prestige layer, only when its tab is visible)
+  // Skeleton rebuilds ONLY when levels/unlock change (buttons stay stable → clicks land); numbers update in place.
   if(el("tab-patents").classList.contains("on")){
     el("patCount").textContent="⚛ "+fmt(state.patents||0);
+    const body=el("patentBody");
     if(!patentsUnlocked()){
-      el("patentBody").innerHTML=`<p class="muted">🔒 Unlocks once you've earned <b>${PATENT_UNLOCK} 📐 Blueprints</b> in total (so far: ${fmt(state.stats.bpEarned||0)}). Patents are a late-game reset granting permanent global bonuses.</p>`;
+      if(body.dataset.psig!=="locked"){ body.dataset.psig="locked";
+        body.innerHTML=`<p class="muted">🔒 Unlocks once you've earned <b>${PATENT_UNLOCK} 📐 Blueprints</b> in total (so far: <span id="patProg"></span>). Patents are a late-game reset granting permanent global bonuses.</p>`; }
+      setText(el("patProg"), fmt(state.stats.bpEarned||0)+" 📐");
     } else {
       const pg=patentAvailable();
-      let html=`<div class="toolrow"><button class="b mk" id="filePatent" style="max-width:290px" ${pg<1?"disabled":""}>⚛ File Patent<small>${pg>=1?"+"+fmt(pg)+" ⚛ · resets factory, Blueprints &amp; tree":"earn more Blueprints this cycle"}</small></button>
-        <span class="muted" style="font-size:12px">This cycle: <b>${fmt(state.bpCycle||0)}</b> 📐 earned. Talents, Achievements &amp; Patents are kept.</span></div>
-        <div class="grid" style="margin-top:10px">`;
-      for(const p of PATENTS){ const l=state.patentUpg[p.id]||0, cost=patentCost(p,l), can=(state.patents||0)>=cost;
-        html+=`<div class="mc"><div class="ic">⚛</div><div><div class="name">${p.name} <span class="mk">Lv ${l}</span></div><div class="rec">${p.desc}</div><div class="st muted">${l>0?"current: "+effText(scaleEff(p.per,l)):""}</div></div>
-          <div class="btns"><button class="b mk${can?' can':''}" data-patent="${p.id}" ${can?'':'disabled'}>Upgrade <small>⚛ ${cost}</small></button></div></div>`;
+      const psig="u|"+PATENTS.map(p=>state.patentUpg[p.id]||0).join(",");
+      if(body.dataset.psig!==psig){ body.dataset.psig=psig;
+        let html=`<div class="toolrow"><button class="b mk" id="filePatent" style="max-width:290px"><span id="fpMain">⚛ File Patent</span><small id="fpSub"></small></button>
+          <span class="muted" style="font-size:12px">This cycle: <b class="num" id="patCycle"></b> 📐 earned. Talents, Achievements &amp; Patents are kept.</span></div>
+          <div class="grid" style="margin-top:10px">`;
+        for(const p of PATENTS){ const l=state.patentUpg[p.id]||0;
+          html+=`<div class="mc"><div class="ic">⚛</div><div><div class="name">${p.name} <span class="mk">Lv ${l}</span></div><div class="rec">${p.desc}</div><div class="st muted">${l>0?"current: "+effText(scaleEff(p.per,l)):""}</div></div>
+            <div class="btns"><button class="b mk" data-patent="${p.id}">Upgrade <small>⚛ ${patentCost(p,l)}</small></button></div></div>`;
+        }
+        body.innerHTML=html+`</div>`;
       }
-      el("patentBody").innerHTML=html+`</div>`;
+      const fp=el("filePatent"); fp.disabled=pg<1;
+      setText(el("fpSub"), pg>=1?`+${fmt(pg)} ⚛ · resets factory, Blueprints & tree`:"earn more Blueprints this cycle");
+      setText(el("patCycle"), fmt(state.bpCycle||0));
+      for(const p of PATENTS){ const l=state.patentUpg[p.id]||0, can=(state.patents||0)>=patentCost(p,l);
+        const b=body.querySelector(`[data-patent="${p.id}"]`); if(b){ b.disabled=!can; b.classList.toggle("can",can); } }
     }
   }
-  // ascension (deepest prestige layer) — show its tab once unlocked, render when visible
+  // ascension (deepest prestige layer) — same stable-skeleton pattern (this panel rebuilt per-frame before, eating clicks)
   el("tabAscension").style.display = ascensionUnlocked() ? "" : "none";
   if(el("tab-ascension").classList.contains("on")){
     el("dmCount").textContent="🌑 "+fmt(state.darkMatter||0);
-    const dg=darkMatterAvailable();
-    let html=`<div class="toolrow"><button class="b mk" id="ascendBtn" style="max-width:290px" ${dg<1?"disabled":""}>🌑 Ascend<small>${dg>=1?"+"+fmt(dg)+" 🌑 · deep reset, re-locks the ages":"grow Blueprints earned this era"}</small></button>
-      <span class="muted" style="font-size:12px">This era: <b>${fmt(state.stats.bpEarned||0)}</b> 📐 earned · <b>${fmt(state.ascensions||0)}</b> ascensions. Dark Matter upgrades, mastery &amp; age record are kept.</span></div>
-      <div class="grid" style="margin-top:10px">`;
-    for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, maxed=l>=u.max, cost=dmCost(u,l), can=!maxed && (state.darkMatter||0)>=cost;
-      const owned=l>0, paused=owned && state.dmOff && state.dmOff[u.id];
-      const status = u.max>1 ? `<span class="mk">Lv ${l}/${u.max}</span>` : (owned?(paused?`<span class="warn" style="font-size:11px">⏸ paused</span>`:`<span class="pos" style="font-size:11px">✓ active</span>`):``);
-      const btnLabel = maxed ? (u.max>1?"MAX":"✓ active") : `${owned&&u.max>1?"Upgrade":"Activate"} <small>🌑 ${cost}</small>`;
-      html+=`<div class="mc${owned?' done':''}${paused?' starv':''}"><div class="ic">${u.ic}</div><div><div class="name">${u.name} ${status}</div><div class="rec">${u.desc}</div></div>
-        <div class="btns"><button class="b mk${can?' can':''}" data-dm="${u.id}" ${can?'':'disabled'}>${btnLabel}</button>${owned?`<button class="b" data-dmtoggle="${u.id}" style="max-width:104px">${paused?'▶ Resume':'⏸ Pause'}</button>`:``}</div></div>`;
+    const dg=darkMatterAvailable(), body=el("ascensionBody");
+    const asig="a|"+DM_AUTO.map(u=>(state.dmUpg[u.id]||0)+(state.dmOff&&state.dmOff[u.id]?"p":"")).join(",");
+    if(body.dataset.asig!==asig){ body.dataset.asig=asig;
+      let html=`<div class="toolrow"><button class="b mk" id="ascendBtn" style="max-width:290px"><span>🌑 Ascend</span><small id="ascSub"></small></button>
+        <span class="muted" style="font-size:12px">This era: <b class="num" id="ascEra"></b> 📐 earned · <b>${fmt(state.ascensions||0)}</b> ascensions. Dark Matter upgrades, mastery &amp; age record are kept.</span></div>
+        <div class="grid" style="margin-top:10px">`;
+      for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, maxed=l>=u.max;
+        const owned=l>0, paused=owned && state.dmOff && state.dmOff[u.id];
+        const status = u.max>1 ? `<span class="mk">Lv ${l}/${u.max}</span>` : (owned?(paused?`<span class="warn" style="font-size:11px">⏸ paused</span>`:`<span class="pos" style="font-size:11px">✓ active</span>`):``);
+        const btnLabel = maxed ? (u.max>1?"MAX":"✓ active") : `${owned&&u.max>1?"Upgrade":"Activate"} <small>🌑 ${dmCost(u,l)}</small>`;
+        html+=`<div class="mc${owned?' done':''}${paused?' starv':''}"><div class="ic">${u.ic}</div><div><div class="name">${u.name} ${status}</div><div class="rec">${u.desc}</div></div>
+          <div class="btns"><button class="b mk" data-dm="${u.id}">${btnLabel}</button>${owned?`<button class="b" data-dmtoggle="${u.id}" style="max-width:104px">${paused?'▶ Resume':'⏸ Pause'}</button>`:``}</div></div>`;
+      }
+      body.innerHTML=html+`</div>`;
     }
-    el("ascensionBody").innerHTML=html+`</div>`;
+    el("ascendBtn").disabled=dg<1;
+    setText(el("ascSub"), dg>=1?`+${fmt(dg)} 🌑 · deep reset, re-locks the ages`:"grow Blueprints earned this era");
+    setText(el("ascEra"), fmt(state.stats.bpEarned||0));
+    for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, can=l<u.max && (state.darkMatter||0)>=dmCost(u,l);
+      const b=body.querySelector(`[data-dm="${u.id}"]`); if(b){ b.disabled=!can; b.classList.toggle("can",can); } }
   }
   // achievements + age goals (only when Stats tab visible)
   if(el("tab-stats").classList.contains("on")){
@@ -2131,7 +2247,7 @@ function sellAll(id){ const amt=state.items[id]||0; if(amt<=0)return 0;
   sessionClicks++; SND.sell(); toast(`Sold ${fmt(amt)} ${ITEMS[id].n} → ${money(g)}`); updateUI(); return g; }
 function mine(){ const cap=capOf("ironOre"), amt=orePerClick()*prospectMult(); state.items.ironOre=Math.min(cap,(state.items.ironOre||0)+amt); state.stats.produced+=amt; sessionClicks++;
   state.prospect=(state.prospect||0)+1;
-  if(state.prospect>=PROSPECT_MAX){ state.prospect=0; state.veinLeft=VEIN_DUR; toast(`🪨 Rich Vein struck! +${Math.round(VEIN_BONUS*100)}% raw extraction for ${VEIN_DUR}s`, "unlock"); SND.goal(); }
+  if(state.prospect>=PROSPECT_MAX){ state.prospect=0; const vd=Math.round(VEIN_DUR*(1+st("veinDur"))); state.veinLeft=vd; toast(`🪨 Rich Vein struck! +${Math.round(VEIN_BONUS*100)}% raw extraction for ${vd}s`, "unlock"); SND.goal(); }   // Geologist's Eye: longer veins
   else SND.click();
   updateUI(); }
 function deployRobots(n){ const have=Math.floor(state.items.robot||0); n=Math.min(n,have); if(n<=0)return;
@@ -2189,6 +2305,7 @@ function doAscend(){
   el("casc").onclick=()=>{ ascend(gain); closeModal(); screenFlash(); SND.prestige(); toast(`🌑 Ascended! +${fmt(gain)} Dark Matter`,"unlock"); };
 }
 function ascend(gain){   // core Ascension (silent; also used by Auto-Ascend)
+  gain += Math.round(st("dmFlat")||0);               // Event Horizon node: bonus Dark Matter per Ascension
   state.darkMatter=(state.darkMatter||0)+gain; state.ascensions=(state.ascensions||0)+1;
   state.stats.dmEarned=(state.stats.dmEarned||0)+gain;   // LIFETIME Dark Matter (never spent) — the cross-era progression axis
   if(state.stats.dmEarned>=(AGE_DM[MAX_AGE]||0) && (state.maxAge||1)<MAX_AGE) toast(`🌀 Transcendence unlocked — Age ${ROMAN[MAX_AGE]} is now reachable`, "unlock");
@@ -2272,6 +2389,7 @@ function migrate(s){
   out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
   out.fleet = s.fleet||0; out.launched = s.launched||0;   // Von Neumann Fleet is permanent
   out.contracts = Array.isArray(s.contracts) ? s.contracts : [];   // Layer 3 contract board
+  out.contractNext = s.contractNext||0;
   out.accumulators = s.accumulators||0; out.charge = s.charge||0;
   if(s.research){                                   // refund old flat-research Blueprints into the new tree
     const OLD={automation:[1,1.7],efficiency:[2,1.9],logistics:[1,1.8],market:[1,1.8],massProduction:[2,2.0],
@@ -2442,6 +2560,8 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.43.0","The Advancement tree finally looks like a map. Each of the six arms now has its own <b>colour</b> — a tinted sector wedge and a labelled banner at its tip (⚙️ INDUSTRY, 📦 LOGISTICS, ⚡ POWER, 💹 COMMERCE, 🔧 ENGINEERING, ✨ ASCENDANCY) with a live <b>allocated-count</b> under each, so one glance tells you where you are and how far each branch has come. Nodes speak a <b>shape language</b>: the qualitative mechanic nodes are now ◈ hexagons marked in their arm's colour, keystones are proper ★ stars with a halo ring, and available frontier nodes gently pulse. Faint <b>ring guides</b> mark every 4th ring, cross-arm links render dashed so weaves read differently from spines, and the stats summary above the canvas is now a row of <b>chips</b> — with your active mechanics called out in their own purple chip."],
+  ["0.42.0","The playtest update — built from real player feedback. (1) <b>Buttons now respond on the first press, everywhere.</b> The Ascension and Patents panels were rebuilding their buttons ten times a second (if you played in the Dark Matter system, you felt it), and action buttons now trigger the instant you press down instead of waiting for a full click. (2) <b>The tree got 10 more build-defining nodes</b> — one at rings 8 and 16 of every arm: Cross-Docking (terminals sell 75% faster), Deep Reserves (overstock clears down to 70%), Flash Capacitors (2× accumulator charging), Superconductors (+4 MW grid per age), Trade Contacts (+40% contract payouts), Market Makers (2× market recovery), Master Machinists (Mk levels give +65%), Geologist's Eye (2× Rich Vein duration), Patent Attorneys (−25% patent cost), and Event Horizon (+1 🌑 per Ascension). (3) <b>Contracts stay relevant at any scale</b>: order sizes now grow with your production rate (1–2.5 minutes of your output), and after fulfilling or skipping, the next buyer takes ~25s to arrive — no more spam-filling trivial orders. Market demand depth also scales with your output so prices aren't permanently floor-pinned late-game. (4) <b>The early game breathes</b>: Age III now needs 4 Blueprints (and Age IV 15), so the Restructure loop matters from the first hour instead of the ages blurring past."],
   ["0.41.0","The polish update — seven improvements across the whole game. (1) 🏆 Reaching the summit now means something: mastering the Transcendence Age fires a proper <b>completion celebration</b> with a lifetime recap of your journey. (2) ♾️ A new <b>Paradox Engine</b> in Ascension — an endless Dark Matter sink that strengthens your Ascendant Foundation with every level, so ascending never stops paying. (3) ⏱ <b>Rush orders</b>: some contracts now pay 4.5–6.5× market but expire in minutes — watch the countdown. (4) 🌳 The Advancement tree got a real UX pass: a <b>search box</b> (matches glow, everything else dims), a <b>cheapest-path preview</b> when you hover any distant node (the route lights up and the tooltip shows its total cost), and a <b>Σ summary line</b> of everything your allocated nodes add up to. (5) ⌨️ <b>Keyboard shortcuts</b> — keys 1–8 switch tabs, B cycles the buy mode. (6) 🔢 A <b>notation toggle</b> in Stats for scientific numbers (1.23e9). (7) 🛟 <b>Automatic save backups</b> — the game keeps three rotating backups and restores from them if your save ever corrupts. Plus: the 🪨 Prospect meter folds into the signature strip once you're past the early game."],
   ["0.40.6","Review sweep — five fixes from a full code &amp; UI audit. (1) The health bar's <b>Find ↓</b> now un-folds a collapsed age group so it can actually show you the machine. (2) Contracts asking for goods that got re-locked by a Restructure or Ascension now auto-reroll instead of sitting dead on the board. (3) The health bar shows <b>net income</b> honestly — red and negative while Auto-Build is spending heavily, instead of a misleading $0. (4) The ⚠ Problems filter shows a live count of machines that need attention. (5) The locked-age banner spans the full row instead of squishing into one column."],
   ["0.40.5","Fixed the Contracts <b>Fulfill</b> button not responding. The delivery count ticks up every moment you produce the item, and the whole contract row (buttons included) was being rebuilt each time — so a click landed on a button that had just been replaced. The rows are now built once and only the count updates, so Fulfill and Skip work on the first click."],
@@ -2506,8 +2626,11 @@ const CHANGELOG=[
    ========================================================================= */
 function wire(){
   el("btnMine").addEventListener("click",e=>{ const a=orePerClick(); mine(); floatAt(e.clientX,e.clientY,"+"+fmt(a)+" ⛏️","var(--ore)"); });
-  el("ticker").addEventListener("click",e=>{ const s=e.target.closest("[data-sell]"); if(s){ const g=sellAll(s.dataset.sell); if(g>0) floatAt(e.clientX,e.clientY,"+"+money(g),"var(--good)"); } });
-  el("machines").addEventListener("click",e=>{
+  // Game-action surfaces use POINTERDOWN, not click: it fires the instant you press, so a UI refresh
+  // between press and release can never steal the click (the root cause of "buttons need spam-clicking").
+  const press=(elm,fn)=>elm.addEventListener("pointerdown",e=>{ if(e.button!==0) return; fn(e); });
+  press(el("ticker"),e=>{ const s=e.target.closest("[data-sell]"); if(s){ const g=sellAll(s.dataset.sell); if(g>0) floatAt(e.clientX,e.clientY,"+"+money(g),"var(--good)"); } });
+  press(el("machines"),e=>{
     const h=e.target.closest(".tier-h[data-age]"); if(h){ const ag=+h.dataset.age; ageCollapsed[ag]=!ageCollapsed[ag]; updateUI(); return; }   // collapse/expand an age group
     const a=e.target.closest("[data-auto]"),b=e.target.closest("[data-buy]"),m=e.target.closest("[data-mk]");
     if(a){ state.auto[a.dataset.auto]=!state.auto[a.dataset.auto]; updateUI(); }
@@ -2559,20 +2682,20 @@ function wire(){
   el("btnWarehouse").addEventListener("click",buildWarehouse);
   el("btnMarket").addEventListener("click",buildMarket);
   el("btnMarketMk").addEventListener("click",mkMarket);
-  el("marketTable").addEventListener("click",e=>{
+  press(el("marketTable"),e=>{
     const s=e.target.closest("[data-msell]");
     if(s){ const g=sellAll(s.dataset.msell); if(g>0) floatAt(e.clientX,e.clientY,"+"+money(g),"var(--good)"); return; }   // quick-sell one item
     const r=e.target.closest("[data-mkitem]"); if(r){ state.marketItem=r.dataset.mkitem; SND.click&&SND.click(); updateUI(); } });
   el("marketSort").addEventListener("click",e=>{ const b=e.target.closest("[data-msort]"); if(b){ marketSort=b.dataset.msort; updateUI(); } });
   el("marketFilter").addEventListener("click",e=>{ const b=e.target.closest("[data-mfilter]"); if(b){ marketFilterMine=b.dataset.mfilter==="mine"; updateUI(); } });
-  el("sigStrip").addEventListener("click",e=>{ const c=e.target.closest("[data-sig]"); if(c){ sigOpen[c.dataset.sig]=!sigOpen[c.dataset.sig]; updateUI(); } });
+  press(el("sigStrip"),e=>{ const c=e.target.closest("[data-sig]"); if(c){ sigOpen[c.dataset.sig]=!sigOpen[c.dataset.sig]; updateUI(); } });
   el("machineFilter").addEventListener("click",e=>{ const b=e.target.closest("[data-mfil]"); if(b){ machineFilter=b.dataset.mfil; updateUI(); } });
   el("machineDensity").addEventListener("click",e=>{ const b=e.target.closest("[data-dense]"); if(b){ machineDense=b.dataset.dense==="1"; updateUI(); } });
-  el("factoryHealth").addEventListener("click",e=>{ const j=e.target.closest("[data-jump]"); if(j) jumpToMachine(j.dataset.jump); });
-  el("contractList").addEventListener("click",e=>{ const f=e.target.closest("[data-fulfill]"), s=e.target.closest("[data-skip]");
+  press(el("factoryHealth"),e=>{ const j=e.target.closest("[data-jump]"); if(j) jumpToMachine(j.dataset.jump); });
+  press(el("contractList"),e=>{ const f=e.target.closest("[data-fulfill]"), s=e.target.closest("[data-skip]");
     if(f) fulfillContract(+f.dataset.fulfill); else if(s) skipContract(+s.dataset.skip); });
   el("btnPrestige").addEventListener("click",doPrestige);
-  el("generators").addEventListener("click",e=>{ const a=e.target.closest("[data-gauto]"),b=e.target.closest("[data-gen]");
+  press(el("generators"),e=>{ const a=e.target.closest("[data-gauto]"),b=e.target.closest("[data-gen]");
     if(a){ const key="gen:"+a.dataset.gauto; state.auto[key]=!state.auto[key]; updateUI(); }
     else if(b) buildGenerator(b.dataset.gen); });
   el("autoToggle").addEventListener("click",()=>{ state.autoOn=!state.autoOn; updateUI(); });
@@ -2592,8 +2715,8 @@ function wire(){
   el("forkCollapse").addEventListener("click",()=>collapseForks(state.forks||0));
   el("buildAcc").addEventListener("click",buildAccumulator);
   el("talents").addEventListener("click",e=>{ const b=e.target.closest("[data-talent]"); if(b) upgradeTalent(b.dataset.talent); });
-  el("patentBody").addEventListener("click",e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });
-  el("ascensionBody").addEventListener("click",e=>{ if(e.target.closest("#ascendBtn")){ doAscend(); return; }
+  press(el("patentBody"),e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });
+  press(el("ascensionBody"),e=>{ if(e.target.closest("#ascendBtn")){ doAscend(); return; }
     const t=e.target.closest("[data-dmtoggle]"); if(t){ state.dmOff=state.dmOff||{}; state.dmOff[t.dataset.dmtoggle]=!state.dmOff[t.dataset.dmtoggle]; SND.click&&SND.click(); updateUI(); return; }
     const u=e.target.closest("[data-dm]"); if(u) upgradeDM(u.dataset.dm); });
   const modes=el("buymode").querySelectorAll("button");

@@ -533,12 +533,18 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("fulfilling pays the reward", E.state.credits === crBefore + c.reward);
   ok("fulfilling consumes the goods", Math.abs(E.state.items[c.item] - 5) < 1e-6);
   ok("fulfilling cools that item's market (demand reset)", E.demandSat[c.item] === 0);
-  ok("fulfilling refills the board", E.state.contracts.length === nBefore && !E.state.contracts.some(x => x.cid === c.cid));
+  // v0.42.0: fulfilling starts a buyer cooldown — the slot refills only after it passes (no spam-chaining)
+  ok("fulfilling leaves the slot on cooldown", E.state.contracts.length === nBefore - 1 && !E.state.contracts.some(x => x.cid === c.cid));
+  ok("fulfilling sets the cooldown timer", (E.state.contractNext||0) > Date.now());
+  E.state.contractNext = 0; E.refillContracts();
+  ok("slot refills once the cooldown passes", E.state.contracts.length === E.CONTRACT_SLOTS);
 
-  // skip rerolls a contract (removes it, board refills)
+  // skip rerolls a contract (removes it; refill waits for the cooldown too)
   const sc = E.state.contracts[0];
   E.skipContract(sc.cid);
-  ok("skip removes the contract and refills", !E.state.contracts.some(x => x.cid === sc.cid) && E.state.contracts.length === E.CONTRACT_SLOTS);
+  ok("skip removes the contract and starts the cooldown", !E.state.contracts.some(x => x.cid === sc.cid) && E.state.contracts.length === E.CONTRACT_SLOTS - 1);
+  E.state.contractNext = 0; E.refillContracts();
+  ok("skipped slot refills after the cooldown", E.state.contracts.length === E.CONTRACT_SLOTS);
 
   // contracts survive a save/load
   const saved = E.defaultState(); saved.markets = 1; saved.contracts = [{ cid: 7, item: "gear", qty: 50, reward: 999 }];
@@ -610,9 +616,9 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
 // ---------------------------------------------------------------- hard age-gate (prestige required to advance)
 (() => {
-  // Ages I–III are free; IV+ are gated behind total Blueprints earned (a permanent, prestige-only metric).
-  ok("Ages I–III are ungated", E.AGE_REQ[1] === 0 && E.AGE_REQ[2] === 0 && E.AGE_REQ[3] === 0);
-  ok("Ages IV/V/VI require increasing Blueprints", E.AGE_REQ[4] > 0 && E.AGE_REQ[5] > E.AGE_REQ[4] && E.AGE_REQ[6] > E.AGE_REQ[5]);
+  // Ages I–II are free; III+ are gated behind total Blueprints earned (v0.42.0: an early gate teaches the Restructure loop).
+  ok("Ages I–II are ungated", E.AGE_REQ[1] === 0 && E.AGE_REQ[2] === 0);
+  ok("Ages III+ require increasing Blueprints", E.AGE_REQ[3] > 0 && E.AGE_REQ[4] > E.AGE_REQ[3] && E.AGE_REQ[5] > E.AGE_REQ[4] && E.AGE_REQ[6] > E.AGE_REQ[5]);
 
   // With 0 Blueprints earned, an Age-IV machine can't unlock even if its prereq is built.
   fresh();
@@ -1124,6 +1130,81 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   const throttled = oreUnder(false), free = oreUnder(true);
   ok("without rawFree, miners are power-throttled", throttled < 9.9);
   ok("rawFree: raw extraction ignores the power throttle", free > throttled + 1);
+})();
+
+// ---------------------------------------------------------------- v0.42.0 qualitative tree pass (10 new specials)
+(() => {
+  const nodeByName = n => Object.keys(E.NODES).find(i => E.NODES[i].name === n);
+  const alloc = n => { E.state.allocated[nodeByName(n)] = true; E.recomputeStats(); };
+  ok("all 10 new specials exist in the tree",
+    ["Cross-Docking","Deep Reserves","Flash Capacitors","Superconductors","Trade Contacts","Market Makers","Master Machinists","Geologist's Eye","Patent Attorneys","Event Horizon"]
+      .every(n => !!nodeByName(n)));
+
+  // Master Machinists: Mk multiplier steepens
+  fresh(); E.state.mk.miner = 4;
+  const mk0 = E.mkMult("miner"); alloc("Master Machinists");
+  near("Master Machinists: Mk 4 gives ×3.6 (was ×3.0)", E.mkMult("miner"), 1 + 0.65*4, 1e-9);
+  ok("Mk boost is an increase", E.mkMult("miner") > mk0);
+
+  // Superconductors: grid grows with age
+  fresh(); E.state.maxAge = 6; E.recomputeStats();
+  const g0 = E.gridBase(); alloc("Superconductors");
+  near("Superconductors: +4 MW per age", E.gridBase(), g0 + 4*6, 1e-9);
+
+  // Patent Attorneys: patents cost less
+  fresh();
+  const p = E.PATENTS[0], c0 = E.patentCost(p, 2); alloc("Patent Attorneys");
+  ok("Patent Attorneys: 25% cheaper patents", E.patentCost(p, 2) === Math.max(1, Math.round(p.base*3*0.75)) && E.patentCost(p, 2) < c0);
+
+  // Event Horizon: bonus Dark Matter on Ascension
+  fresh(); E.state.maxAge = 7; alloc("Event Horizon");
+  E.ascend(4);
+  eq("Event Horizon: +1 🌑 per Ascension", E.state.darkMatter, 5);
+
+  // Trade Contacts: contract payouts +40%
+  fresh(); E.state.markets = 1; alloc("Trade Contacts");
+  E.state.contracts = [{cid: 970, item: "ironOre", qty: 10, reward: 100}];
+  E.state.items.ironOre = 20; const cr0 = E.state.credits;
+  E.fulfillContract(970);
+  eq("Trade Contacts: fulfil pays 140", Math.round(E.state.credits - cr0), 140);
+
+  // Market Makers: demand recovers twice as fast
+  fresh(); E.state.machines.miner = 1;
+  E.demandSat.gear = 0.8; E.simulate(1, 1); const slow = E.demandSat.gear;
+  fresh(); E.state.machines.miner = 1; alloc("Market Makers");
+  E.demandSat.gear = 0.8; E.simulate(1, 1);
+  ok("Market Makers: saturation decays faster", E.demandSat.gear < slow);
+
+  // Cross-Docking: terminal throughput +75%
+  fresh(); E.state.markets = 1; E.state.marketItem = "ironOre"; E.state.items.ironOre = 100;
+  E.simulate(1, 1); const soldBase = 100 - E.state.items.ironOre;
+  fresh(); alloc("Cross-Docking"); E.state.markets = 1; E.state.marketItem = "ironOre"; E.state.items.ironOre = 100;
+  E.simulate(1, 1);
+  near("Cross-Docking: sells 1.75× per tick", (100 - E.state.items.ironOre) / soldBase, 1.75, 0.01);
+
+  // Deep Reserves: overstock keep-line drops to 70%
+  fresh(); alloc("Deep Reserves"); E.state.markets = 40; E.state.marketItem = E.MARKET_OVERSTOCK;
+  E.state.items.ironOre = E.capOf("ironOre") * 0.8;   // above 70%, below 90% — only sells with Deep Reserves
+  E.simulate(1, 1);
+  ok("Deep Reserves: overstock sells between 70% and 90% of cap", E.state.items.ironOre < E.capOf("ironOre") * 0.8 - 1e-6);
+
+  // Flash Capacitors: accumulators bank surplus twice as fast
+  const bank = (withNode) => { fresh(); if (withNode) alloc("Flash Capacitors");
+    E.state.accumulators = 50; E.state.charge = 0; E.state.machines.miner = 1;   // huge surplus vs 1 MW draw
+    E.computePower(1); return E.state.charge; };
+  const c1 = bank(false), c2 = bank(true);
+  near("Flash Capacitors: ×2 charging", c2 / c1, 2, 0.01);
+
+  // Geologist's Eye: veins last twice as long
+  fresh(); alloc("Geologist's Eye");
+  E.state.prospect = E.PROSPECT_MAX - 1; E.mine();
+  near("Geologist's Eye: vein duration doubled", E.state.veinLeft, E.VEIN_DUR*2, 0.6);
+
+  // Contract scaling: quantities track production rate at scale
+  fresh(); E.prodRate.ironOre = 500;   // simulate late-game output
+  E.demandSat.ironOre = 0;
+  ok("demand depth grows with production", E.demandDepth("ironOre") > E.ITEMS.ironOre.cap * E.DEMAND_DEPTH_K + 1000);
+  E.prodRate.ironOre = 0;
 })();
 
 // ---------------------------------------------------------------- summary

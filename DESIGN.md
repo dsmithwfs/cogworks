@@ -177,6 +177,12 @@ doubles as a demand-management tool (route a saturated glut into a contract inst
 contract expires (`c.exp`, wall-clock 4–8 min; swept in `refillContracts`, live countdown on the row). The
 board's first real *tension*: re-route production now or let it lapse.
 
+**Contracts scale + cool down (v0.42.0, from playtest):** at scale, cap-based order sizes became pocket change —
+production filled them instantly and fulfilling was a spam-click money printer. Now `qty = max(cap-based,
+1–2.5 min × prodRate[item])` so orders track your output, and fulfilling/skipping starts a `CONTRACT_COOLDOWN`
+(25 s, `state.contractNext`) before the next buyer arrives. Demand depth likewise gained a production term
+(`demandDepth = cap·3 + prodRate·30 s`) so late-game markets flex instead of pinning at the floor.
+
 **Balance:** Layer 1 raised income (top prices ~2.5×), Layer 2 pulled it back down and *lengthened* the narrow
 top-end (its few markets saturate) — the two roughly offset, so `test/pace.js` pacing held near baseline (era 1
 ~12h, push-to-VIII 1.9h→6.1h). Contracts are optional active income **not** modelled by the sims (rewards kept
@@ -259,7 +265,12 @@ powerdraw, click, kick, smelt`). Adding tree content is just more data.
 nodes at set outer rings (replacing that ring's generic spine): **SYNERGY** — effects computed *dynamically*
 from game state, not summed statically: `prodPerAge`·maxAge, `prodPerMachine`·(machines/100), `sellPerItem`·
 (unlocked items), `bpPerAge`·maxAge (in `bpFor`), `whProd`·warehouses (all folded live into `globalRate`
-/`marketMult`/`bpFor`). **MECHANIC-CHANGERS** — behavioral flags read in `simulate`: `noBackpressure`
+/`marketMult`/`bpFor`). v0.42.0 (playtest: "the tree is still mostly +%") added a special at rings 8 AND 16 of **every** arm — 18
+qualitative nodes total: Cross-Docking (`marketRate`), Deep Reserves (`overstockKeep`), Flash Capacitors
+(`accCharge`), Superconductors (`gridPerAge`), Trade Contacts (`contractPay`), Market Makers (`demandRegen`),
+Master Machinists (`mkBoost`), Geologist's Eye (`veinDur`), Patent Attorneys (`patentDiscount`), Event Horizon
+(`dmFlat`) — each wired into its own engine touchpoint, not `globalRate`.
+**MECHANIC-CHANGERS** — behavioral flags read in `simulate`: `noBackpressure`
 (machines never throttle on full buffers; overflow discarded — throughput vs waste), `rawFree` (tier-0
 extractors ignore the power ratio). **TRADEOFF** keystones like *Redline* (`{prod:.9, powerdraw:.45}`).
 Plus the existing **unlock** node (Auto-Builder, `{auto:1}`). These give the tree real *choices*, not just
@@ -526,7 +537,12 @@ off by default, and reads live state without perturbing it.
   red), status, **Build ×N** + **Mk↑** + **Auto** buttons.
 - **⚡ Power** — grid supply/demand/load bar; generator build cards (Build + Auto).
 - **📦 Storage & Trade** — Warehouses; Trade Terminal build/upgrade + sell-target select.
-- **🌳 Advancements** — the pan/zoom passive tree; click nodes to allocate Blueprints. UX pass (v0.41.0):
+- **🌳 Advancements** — the pan/zoom passive tree; click nodes to allocate Blueprints. Visual pass (v0.43.0):
+  per-arm identity (`ARM_COLOR`/`ARM_ICON` — tinted sector wedges, labelled banners with live x/y progress via
+  `armprog-*`), a node **shape language** (specials = ◈ hexagons with arm-coloured mark via `special:1` flag,
+  keystones = ★ star + `.khalo` ring, frontier pulses via `npulse`), faint ring guides every 4th ring, dashed
+  cross-arm links, and the Σ summary as **chips** (`renderTreeSummary` — mechanics counted in their own chip,
+  `MECH_KEYS`). UX pass (v0.41.0):
   **search box** (`treeSearch` — matches glow green, everything else dims), **cheapest-path preview** on hover
   (`cheapestPathTo` = Dijkstra from the allocated frontier, weight = node cost; route highlighted + total cost
   in the tooltip), and a **Σ summary line** (`renderTreeSummary`) of all allocated effects. QoL elsewhere:
