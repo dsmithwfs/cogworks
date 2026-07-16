@@ -24,7 +24,14 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("motor branch exists", !!E.ITEMS.motor && !!E.MACHINES.motorWinder);
   ok("gearworks: alt mechanism route via motor (no circuit)", E.MACHINES.gearworks && E.MACHINES.gearworks.in.motor && E.MACHINES.gearworks.out.mechanism && !E.MACHINES.gearworks.in.circuit);
   eq("generator count", E.GORDER.length, 3);
-  ok("tree is large (300+ nodes)", Object.keys(E.NODES).length >= 300);
+  ok("tree is hand-authored (~80 focused nodes)", Object.keys(E.NODES).length >= 60 && Object.keys(E.NODES).length <= 140);
+  ok("most tree nodes are non-flat (synergy/mechanic/keystone)", (() => {
+    const flatKeys = new Set(["prod","cap","sell","power","grid","bp","click","smelt","offcap"]);
+    let flat = 0, tot = 0;
+    for (const id in E.NODES) { const n = E.NODES[id]; if (id === "start") continue; tot++;
+      const keys = Object.keys(n.eff); if (keys.length === 1 && flatKeys.has(keys[0]) && n.type !== "keystone") flat++; }
+    return flat / tot < 0.5;   // fewer than half are single-stat flat boosts
+  })());
   eq("milestone count", E.MILESTONES.length, 18);
   eq("talent count", E.TALENTS.length, 9);
   eq("fresh: only Core allocated", Object.keys(s.allocated).length, 1);
@@ -116,7 +123,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("domain split: talents are all efficiency", [...talStats].every((k) => efficiency.includes(k)));
 
   fresh(); E.state.allocated["ind_1"] = true; E.recomputeStats();
-  near("tree node feeds globalRate", E.globalRate(), 1.08);
+  near("tree node feeds globalRate", E.globalRate(), 1 + E.NODES["ind_1"].eff.prod);
 })();
 
 // ---------------------------------------------------------------- raw-cost reduction (talents)
@@ -272,7 +279,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 (() => {
   // set up: auto unlocked, Age IV, two flagged machines — Miner (empty output) vs Iron Furnace (full output)
   fresh();
-  E.state.allocated["eng_3_s1"] = true; E.recomputeStats();   // Auto-Builder node
+  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();   // Auto-Builder node
   E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.unlocked.miner = true; E.state.unlocked.ironFurnace = true;
   E.state.auto = { miner: true, ironFurnace: true };
@@ -284,7 +291,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // whole-factory auto-pilot: balances UNLOCKED machines even with NOTHING flagged (no per-machine opt-in)
   fresh();
-  E.state.allocated["eng_3_s1"] = true; E.recomputeStats();
+  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();
   E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.unlocked.miner = true; E.state.auto = {};            // nothing flagged
   E.state.items.ironOre = 0;                                    // miner's output empty (demanded)
@@ -293,7 +300,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // auto-pilot also adds storage when a buffer caps
   fresh();
-  E.state.allocated["eng_3_s1"] = true; E.recomputeStats();
+  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();
   E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.items.brick = 1e4;                                    // warehouse BOM
   E.state.items.ironOre = E.capOf("ironOre");                   // a buffer is capped
@@ -303,7 +310,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // with balance OFF it buys 1 of each flagged instead
   fresh();
-  E.state.allocated["eng_3_s1"] = true; E.recomputeStats();
+  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();
   E.state.autoOn = true; E.state.autoBalance = false; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.unlocked.miner = true; E.state.unlocked.ironFurnace = true;
   E.state.auto = { miner: true, ironFurnace: true };
@@ -406,16 +413,16 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // with the Blast Furnace node allocated, smelter output rises ~50%
   fresh();
-  E.state.allocated["ind_2_s0"] = true; E.recomputeStats();
-  ok("Blast Furnace node grants the smelt stat", E.st("smelt") > 0.49);
+  E.state.allocated["ind_5"] = true; E.recomputeStats();
+  ok("Blast Furnace node grants the smelt stat", E.st("smelt") > 0.59);
   E.state.machines.ironFurnace = 1; E.state.items.ironOre = 100; E.state.items.coal = 100;
   E.simulate(1, 1);
   const boosted = E.state.items.ironPlate;
-  ok("smelt lever lifts smelter output ~50%", boosted > base * 1.45 && boosted < base * 1.55);
+  ok("smelt lever lifts smelter output ~50%", boosted > base * 1.55 && boosted < base * 1.65);
 
   // the lever is smelter-ONLY: a non-smelter (Gear Press) is unaffected
   fresh();
-  E.state.allocated["ind_2_s0"] = true; E.recomputeStats();
+  E.state.allocated["ind_5"] = true; E.recomputeStats();
   E.state.unlocked.gearPress = true; E.state.machines.gearPress = 1; E.state.items.ironPlate = 100;
   E.simulate(1, 1);
   ok("smelt lever does NOT boost non-smelters", (E.state.items.gear || 0) > 0.95 && (E.state.items.gear || 0) < 1.05);
@@ -660,30 +667,38 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("production recorded even with a near-full, downstream-drained buffer", ((E.state.stats.made.ironPlate || 0) - b2) > 0);
 })();
 
-// ---------------------------------------------------------------- Age I signature: Prospecting
+// ---------------------------------------------------------------- Age I signature: Prospecting (v0.44.0 depth engine)
 (() => {
   fresh();
-  ok("no vein by default → prospectMult is 1", E.prospectMult() === 1);
+  ok("no vein by default → veinBonus is 0", E.veinBonus() === 0);
+  ok("four vein tiers, ascending depth thresholds", E.VEIN_TIERS.length === 4 &&
+    E.VEIN_TIERS.every((t, i) => i === 0 || t.min > E.VEIN_TIERS[i-1].min));
 
-  // Mining PROSPECT_MAX times strikes a Rich Vein and resets the meter.
-  fresh();
-  for (let i = 0; i < E.PROSPECT_MAX; i++) E.mine();
-  ok("striking a vein sets the surge timer", E.state.veinLeft === E.VEIN_DUR);
-  ok("meter resets after striking", E.state.prospect === 0);
-  ok("active vein boosts raw extraction", Math.abs(E.prospectMult() - (1 + E.VEIN_BONUS)) < 1e-9);
+  // depth sets the tier
+  eq("depth 0 → Surface Seam (tier 0)", E.veinTierAt(0), 0);
+  eq("depth 90 → Mother Lode (tier 3)", E.veinTierAt(90), 3);
 
-  // The surge multiplies tier-0 (raw) output but NOT higher tiers.
+  // enough manual clicks fill the meter and strike a vein — starting a GLOBAL production surge
   fresh();
-  E.state.veinLeft = E.VEIN_DUR;
-  E.state.machines.miner = 10;                 // tier 0 → boosted
+  let struck = false;
+  for (let i = 0; i < 40 && !struck; i++) { E.mine(); if (E.state.veinLeft > 0) struck = true; }
+  ok("manual mining eventually strikes a vein", struck && E.state.prospect === 0);
+  ok("a vein surges GLOBAL production (not just raw)", E.veinBonus() > 0);
+  const gr0 = E.globalRate();
+  E.state.veinLeft = 0;
+  ok("globalRate drops when the vein ends", E.globalRate() < gr0);
+
+  // active mining drives DEPTH up toward the higher tiers
+  fresh();
+  for (let i = 0; i < 60; i++) E.mine();
+  ok("sustained mining raises depth", E.state.depth > E.DEPTH_PER_STRIKE);
+
+  // the surge multiplies ALL tiers now (via globalRate), unlike the old raw-only bonus
+  fresh();
+  E.state.veinTier = 1; E.state.veinLeft = 10;   // Rich Vein active
+  E.state.machines.ironFurnace = 10; E.state.items.ironOre = 1000; E.state.items.coal = 1000;
   E.simulate(1, 1);
-  ok("vein lifts raw miner output ~+50%", E.state.items.ironOre > 14.9 && E.state.items.ironOre < 15.1);
-
-  fresh();
-  E.state.veinLeft = E.VEIN_DUR;
-  E.state.machines.ironFurnace = 10; E.state.items.ironOre = 1000; E.state.items.coal = 1000;  // tier 1 → NOT boosted
-  E.simulate(1, 1);
-  ok("vein does NOT boost non-raw (tier-1) output", E.state.items.ironPlate > 9.9 && E.state.items.ironPlate < 10.1);
+  ok("vein lifts non-raw output too (global surge)", E.state.items.ironPlate > 11);
 })();
 
 // ---------------------------------------------------------------- Age II signature: Overclock
@@ -1196,9 +1211,11 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   near("Flash Capacitors: ×2 charging", c2 / c1, 2, 0.01);
 
   // Geologist's Eye: veins last twice as long
+  fresh();
+  E.state.depth = 0; E.strikeVein(true); const base = E.state.veinLeft;
   fresh(); alloc("Geologist's Eye");
-  E.state.prospect = E.PROSPECT_MAX - 1; E.mine();
-  near("Geologist's Eye: vein duration doubled", E.state.veinLeft, E.VEIN_DUR*2, 0.6);
+  E.state.depth = 0; E.strikeVein(true);
+  near("Geologist's Eye: vein duration doubled", E.state.veinLeft, base*2, 1);
 
   // Contract scaling: quantities track production rate at scale
   fresh(); E.prodRate.ironOre = 500;   // simulate late-game output

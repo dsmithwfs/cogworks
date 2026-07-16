@@ -48,7 +48,7 @@ const EXPORTS = [
   "WORKFORCE_MW", "workforceDraw",
   "DYSON_MW", "dysonPower", "deployDyson",
   "FORK_GAIN", "FORK_MW", "FORK_SHARD", "forkMult", "forkDraw", "forkCost", "openFork", "collapseForks",
-  "PROSPECT_MAX", "VEIN_DUR", "VEIN_BONUS", "prospectMult", "mine",
+  "VEIN_TIERS", "veinTierAt", "veinBonus", "strikeVein", "prospectFillPerSec", "PROSPECT_CLICK", "DEPTH_MAX", "DEPTH_PER_STRIKE", "mine",
   "OC_SPEED", "OC_INPUT", "overclockOn", "ocSpeed", "ocInput",
   "FLEET_CAP_MULT", "FLEET_REPLICATE", "FLEET_MULT", "fleetCap", "fleetBonus", "launchProbes",
   "ACCUMULATOR", "ACC_BOOST", "accBonus", "planAccumulator", "autoBuild", "AGE_GOALS", "checkAgeGoals", "SND", "bottleneck", "chainHealth",

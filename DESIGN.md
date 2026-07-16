@@ -226,17 +226,21 @@ A cross-cutting throttle. Every machine **draws power**; if supply can't meet de
 
 The prestige "shop" and the **power/capability** meta layer — production multipliers,
 capacity, economy, and unlocks. (Cost-reduction lives in the Talent Tree, §11, so the two
-never overlap.) A large interconnected **passive tree** (**~300 nodes**, v0.30.0) spent with
-Blueprints. Pathing is **Path-of-Exile-style**: a node can be allocated only when an adjacent
-node is already allocated, starting from the central **Core**. Allocations are kept across every
-Restructure — and are fully refundable (see Respec below).
+never overlap.) An interconnected **passive tree** spent with Blueprints. Pathing is
+**Path-of-Exile-style**: a node can be allocated only when an adjacent node is already allocated,
+starting from the central **Core**. Allocations are kept across every Restructure — and are fully
+refundable (see Respec below).
 
-**Structure (v0.30.0):** each arm's hand-authored **inner rings** (the named nodes — preserved by
-ID so saves/tests survive) are procedurally **extended out to `TREE_DEPTH` (20) rings** — long
-chains of themed minors, a **Nexus** notable every 4th ring, the keystone relocated to the tip.
-Generated per arm by `buildArms()` from `ARM_GEN` (each arm has a primary + secondary stat);
-costs escalate `~4 + ri^1.35` outward. Adjacent arms cross-link at rings 3/5/9/13/16 for
-sideways weaving. There's far more to path toward across many prestiges than any one run fills.
+**Structure (v0.44.0 REWRITE — from playtest feedback "most nodes are just +x%"):** the tree was
+rebuilt from ~309 procedurally-generated `+x%` nodes into **~76 fully hand-authored nodes** (`ARMS_SRC`,
+no procedural generation). About **half are qualitative** — synergies that scale with state, rule-changing
+mechanics, tradeoffs — the rest are *chunky* flat jumps (each one actually moves the needle) and keystones.
+Each arm is a short (~9–11 ring) themed chain to its keystone, with side branches for routing choice.
+Node helpers `M`/`N`/`K`/`S` (S = special → hexagon on the canvas). Bumping `TREE_VERSION` triggers a
+**respec on load** (`migrate` clears allocations and refunds ≈`oldCount×35` BP) so no save breaks.
+`TREE_DEPTH` now derives from the longest arm (~12). **Caveat:** the leaner tree is a smaller BP/power
+sink, so the Power arm was strengthened (~2× genMult/grid) and `gridBase` gained a per-age floor — pacing
+is not yet human-validated (`test/pace.js` under-powers itself and is unreliable post-rewrite).
 
 **Six themed arms** radiate from the Core, each ending in a **keystone**:
 
@@ -638,11 +642,17 @@ harder → multiply everything*, a compounding top-level loop that gives Reality
 the power-based signatures (Accumulators/Workforce); the decision axis is *material surplus*, not grid. A
 persistent preference (survives Restructure). Speed when you can afford the waste; efficiency when you can't.
 
-**Phase 2 — Stone-Age signature: Prospecting (v0.26.0).** Manual mining charges a Prospect meter
-(`PROSPECT_MAX = 20` clicks); filling it strikes a **Rich Vein** — `VEIN_DUR = 30`s of `+VEIN_BONUS`
-(50%) to **all raw (tier-0) extraction** and hand-mining (`prospectMult()` multiplies tier-0 output in
-`simulate`, and `orePerClick`). Per-run (resets on Restructure). It's optional upside that rewards active
-early play and *fades naturally* late-game (you stop clicking) — the right shape for an Age-I hook.
+**Phase 2 — Stone-Age signature: Prospecting.** *Reworked v0.44.0 (playtest: "veins only matter at the
+start; Geologist's Eye is dead on arrival").* Now an **evergreen depth engine**. A charge meter fills
+**automatically** from ongoing raw production (`prospectFillPerSec`, base `1/45s`) and **faster from manual
+mining** (`PROSPECT_CLICK`); on full it **strikes a vein** (`strikeVein`) — a temporary **GLOBAL production
+surge** (`veinBonus()` folded into `globalRate`, replacing the old tier-0-only `prospectMult`), so it matters
+at every scale. Vein *quality* is set by **Depth** (`state.depth`, 0–100): each strike and each manual click
+raises it (`DEPTH_PER_STRIKE`/`DEPTH_PER_CLICK`), and it **decays** over time (`DEPTH_DECAY`, halved by the
+`depthKeep` node). Depth → tier via `VEIN_TIERS` (Surface Seam +15% → Rich Vein +35% → Deep Lode +60% →
+🌋 Mother Lode +100%). **Idle play sustains the small tiers; active mining drives Depth to the Mother Lode** —
+an optional active loop that's rewarding but never required. Per-run (resets on Restructure). Engineering-arm
+tree nodes tune it: `prospectRate` (charge+depth gain), `veinPower` (surge size), `veinDur` (duration), `depthKeep`.
 
 **Phase 2 — Robotic Age signature: the Workforce.** Robots (a high-value product) can be
 **deployed** as workers instead of sold or fed to Probes: production bonus = `√deployed ×

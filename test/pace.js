@@ -21,17 +21,31 @@ function strategize() {
   const s = E.state;
   if ((s.machines.ironFurnace || 0) > 0) sellSurplus(); else sellAll("ironOre");
   for (const k of E.MORDER) { if (!s.unlocked[k] || (s.machines[k] || 0) > 0) continue; const p = E.planMachine(k, 1), bom = E.scaleBOM(E.buildBOM(k), p.n); if (p.n > 0 && E.canAfford(p.cost, bom)) { E.pay(p.cost, bom); s.machines[k] += p.n; s.stats.built += p.n; E.refreshUnlocks(true); } }
-  if (E.lastPower.ratio < 1) { for (let i = 0; i < 40; i++) { let best = null, score = -1;
-    for (const g of E.GORDER) { if (!E.genUnlocked(g)) continue; const p = E.planGenerator(g, 1); if (p.n <= 0) continue; const bom = E.scaleBOM(E.GENERATORS[g].build.bom, p.n); if (!E.canAfford(p.cost, bom)) continue; const sc = E.GENERATORS[g].power * (E.GENERATORS[g].fuel ? 1 : 10); if (sc > score) { score = sc; best = { g, p, bom }; } }
-    if (!best) break; E.pay(best.p.cost, best.bom); s.generators[best.g] += best.p.n; } }
+  fundPower();
   for (const id in E.ITEMS) { if (E.itemUnlocked(id) && (s.items[id] || 0) >= E.capOf(id) - 1e-6) { const p = E.planWarehouse(1); if (p.n > 0 && E.canAfford(p.cost, E.scaleBOM(E.WAREHOUSE.bom, p.n))) { E.pay(p.cost, E.scaleBOM(E.WAREHOUSE.bom, p.n)); s.warehouses += p.n; } break; } }
   for (let i = 0; i < 150; i++) { let best = null, bestFill = Infinity;
     for (const k of E.MORDER) { if (!s.unlocked[k]) continue; const p = E.planMachine(k, 1); if (p.n <= 0) continue; const bom = E.scaleBOM(E.buildBOM(k), 1); if (!E.canAfford(p.cost, bom)) continue;
       const out = Object.keys(E.MACHINES[k].out)[0]; const fill = (E.state.items[out] || 0) / E.capOf(out); if (fill < bestFill) { bestFill = fill; best = k; } }
     if (!best) break; const p = E.planMachine(best, 1); E.pay(p.cost, E.scaleBOM(E.buildBOM(best), 1)); s.machines[best] += p.n; s.stats.built += p.n; E.refreshUnlocks(true); }
+  fundPower();   // power the machines we just scaled (a real player wouldn't leave the grid at 5%)
+}
+// Build generators until the grid is satisfied (or credits run out) — spends only a slice of credits so it doesn't
+// starve chain progress, but keeps power near 1 instead of letting it spiral (the old 40/tick cap did).
+function fundPower() {
+  const s = E.state;
+  for (let i = 0; i < 250; i++) {
+    E.computePower(0.001);
+    if (E.lastPower.ratio >= 0.995) break;
+    let best = null, score = -1;
+    for (const g of E.GORDER) { if (!E.genUnlocked(g)) continue; const p = E.planGenerator(g, 1); if (p.n <= 0) continue;
+      const bom = E.scaleBOM(E.GENERATORS[g].build.bom, p.n); if (!E.canAfford(p.cost, bom)) continue;
+      const sc = E.GENERATORS[g].power * (E.GENERATORS[g].fuel ? 1 : 10); if (sc > score) { score = sc; best = { g, p, bom }; } }
+    if (!best) break; E.pay(best.p.cost, best.bom); s.generators[best.g] += best.p.n;
+  }
 }
 function available(id) { if (id === "start" || E.state.allocated[id]) return false; for (const l of E.NODES[id].links) if (E.state.allocated[l]) return true; return false; }
-function nodeScore(n) { const e = n.eff; return (e.prod || 0) * 3 + (e.sell || 0) * 2 + (e.bp || 0) * 2 + (e.cap || 0) + (e.power || 0) + (e.grid || 0) * 0.03 + (e.prodPerAge||0)*20 + (e.prodPerMachine||0)*20 + (e.auto ? 1 : 0); }
+function nodeScore(n) { const ph = E.lastPower.ratio < 0.9 ? 8 : 2;   // chase power/grid when the grid is stressed
+  const e = n.eff; return (e.prod || 0) * 3 + (e.sell || 0) * 2 + (e.bp || 0) * 2 + (e.cap || 0) + (e.power || 0) * ph + (e.grid || 0) * 0.04 + (e.gridPerAge||0)*(ph*0.2) + (e.prodPerAge||0)*20 + (e.prodPerMachine||0)*20 + (e.whProd||0)*30 + (e.smelt||0) + (e.auto ? 1 : 0); }
 function reinvestBP() { let guard = 0;
   while (guard++ < 1500) { let best = null, bestPer = -1;
     for (const id in E.NODES) { if (!available(id)) continue; const n = E.NODES[id]; if (n.cost > E.state.blueprints) continue; const per = nodeScore(n) / Math.max(1, n.cost); if (per > bestPer) { bestPer = per; best = id; } }
