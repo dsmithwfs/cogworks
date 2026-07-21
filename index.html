@@ -539,7 +539,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.44.0";
+const VERSION = "0.45.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -704,8 +704,8 @@ const S=(name,desc,eff,cost)=>({name,desc,eff,cost,type:"notable",special:1});  
 // (TREE_VERSION) so old allocations refund cleanly.
 const ARMS_SRC = [
   {key:"ind", angle:-90, rings:[   // Industry — the production powerhouse
-    {spine:M("Tooling","+15% production",{prod:.15},3),                                     side:[S("Bulk Hoppers","+30% storage caps",{cap:.30},5)]},
-    {spine:N("Foreman","+25% production",{prod:.25},7)},
+    {spine:M("Tooling","+8% production",{prod:.08},3),                                      side:[S("Bulk Hoppers","+30% storage caps",{cap:.30},5)]},
+    {spine:N("Foreman","+15% production",{prod:.15},7)},
     {spine:S("Economies of Scale","+2% production per 100 machines you've built",{prodPerMachine:.02},13)},
     {spine:N("Assembly Line","+45% production",{prod:.45},22),                               side:[M("Second Shift","+25% production",{prod:.25},18)]},
     {spine:S("Blast Furnace","+60% smelter output — furnaces, mills & foundry",{smelt:.60},30)},
@@ -717,7 +717,7 @@ const ARMS_SRC = [
     {spine:K("Industrial Titan","+280% production",{prod:2.8},330)},
   ]},
   {key:"log", angle:-30, rings:[   // Logistics — storage, throughput, offline
-    {spine:N("Warehousing","+45% storage caps",{cap:.45},4),                                side:[M("Reinforced Shelving","+30% storage caps",{cap:.30},6)]},
+    {spine:N("Warehousing","+30% storage caps",{cap:.30},4),                                side:[M("Reinforced Shelving","+30% storage caps",{cap:.30},6)]},
     {spine:S("Vertical Integration","Each Warehouse also gives +2% production",{whProd:.02},11)},
     {spine:S("Cross-Docking","Trade Terminals sell 75% faster",{marketRate:.75},20),         side:[M("Deep Bins","+40% storage caps",{cap:.40},16)]},
     {spine:N("Distribution Hub","+60% storage caps",{cap:.60},28)},
@@ -739,8 +739,8 @@ const ARMS_SRC = [
     {spine:K("Zero-Point Grid","+400% generator output and +2000 MW base grid",{power:4.0,grid:2000},340)},
   ]},
   {key:"com", angle:90, rings:[   // Commerce — selling & contracts
-    {spine:N("Haggling","+25% sale value",{sell:.25},3),                                    side:[M("Market Stall","+20% sale value",{sell:.20},4)]},
-    {spine:N("Trade Guild","+45% sale value",{sell:.45},9)},
+    {spine:N("Haggling","+12% sale value",{sell:.12},3),                                    side:[M("Market Stall","+20% sale value",{sell:.20},4)]},
+    {spine:N("Trade Guild","+30% sale value",{sell:.30},9)},
     {spine:S("Diversified Portfolio","+3% sale value per unlocked item type",{sellPerItem:.03},18), side:[M("Brokers","+30% sale value",{sell:.30},14)]},
     {spine:S("Trade Contacts","Contracts pay 40% more",{contractPay:.4},28)},
     {spine:N("Futures Market","+55% sale value",{sell:.55},44)},
@@ -750,8 +750,8 @@ const ARMS_SRC = [
     {spine:K("Monopoly","+250% sale value",{sell:2.5},330)},
   ]},
   {key:"eng", angle:150, rings:[   // Engineering — tools, Mk mastery & Prospecting
-    {spine:M("Servo Motors","+12% production",{prod:.12},3),                                side:[M("Hand Tools","+3 ore per click",{click:3},3)]},
-    {spine:N("R&D Lab","+35% production",{prod:.35},10),                                     side:[S("Auto-Builder","Unlocks the Auto-Build system — flag machines & generators to build themselves",{auto:1},16)]},
+    {spine:M("Servo Motors","+8% production",{prod:.08},3),                                 side:[S("Auto-Builder","Unlocks the Auto-Build system — flag machines & generators to build themselves",{auto:1},14), M("Hand Tools","+3 ore per click",{click:3},4)]},
+    {spine:N("R&D Lab","+20% production",{prod:.20},10)},
     {spine:S("Ancestral Knowledge","+5% production per age you've reached",{prodPerAge:.05},20)},
     {spine:S("Prospector's Instinct","Prospecting charges 60% faster and digs deeper",{prospectRate:.6},30), side:[M("Power Tools","+6 ore per click",{click:6},26)]},
     {spine:N("CNC Mills","+50% production",{prod:.50},40)},
@@ -762,8 +762,8 @@ const ARMS_SRC = [
     {spine:K("Singularity Engine","+240% production and Ore Vein surges are 100% stronger",{prod:2.4,veinPower:1},330)},
   ]},
   {key:"asc", angle:210, rings:[   // Ascendancy — prestige, offline & Dark Matter
-    {spine:N("Blueprinting","+25% Blueprints per Restructure",{bp:.25},3),                   side:[M("Battery","+3h offline cap",{offcap:3},4)]},
-    {spine:N("The Archives","+45% Blueprints per Restructure",{bp:.45},9)},
+    {spine:N("Blueprinting","+15% Blueprints per Restructure",{bp:.15},3),                   side:[M("Battery","+3h offline cap",{offcap:3},4)]},
+    {spine:N("The Archives","+30% Blueprints per Restructure",{bp:.30},9)},
     {spine:S("Compound Interest","+4% Blueprints per Restructure per age reached",{bpPerAge:.04},18), side:[S("Night Shift","+35% offline rate",{offeff:.35},14)]},
     {spine:S("Kickstart","Every run begins with a pre-built starting boost",{kick:1},28)},
     {spine:S("Patent Attorneys","Patents cost 25% less",{patentDiscount:.25},42)},
@@ -773,7 +773,7 @@ const ARMS_SRC = [
     {spine:K("Singularity","+180% Blueprints, +50% offline rate and +50% production",{bp:1.8,offeff:.5,prod:.5},340)},
   ]},
 ];
-const TREE_VERSION = 2;   // bump to respec everyone's tree when the node layout changes
+const TREE_VERSION = 3;   // bump to respec everyone's tree when the node layout changes
 // Per-arm identity: title (for the sector label/progress), sector tint, and icon.
 const ARM_GEN = {
   ind:{title:"Industry"}, log:{title:"Logistics"}, pow:{title:"Power"},
@@ -855,17 +855,19 @@ function effText(eff){ return Object.keys(eff).map(k=>{
 // material costs (tier-0 consumption). Per-rank effects are summed into st() like everything else.
 // Talents are the EFFICIENCY layer (cost reduction only) — no overlap with the tree's multipliers.
 const TALENTS = [
-  {id:"extract",  tier:1, name:"Efficient Extraction", max:10, per:{rawcost:.03},        desc:"−3% raw material cost / rank"},
-  {id:"lean",     tier:1, name:"Lean Process",         max:10, per:{input:.015},         desc:"−1.5% all input costs / rank"},
-  {id:"thrifty",  tier:1, name:"Thrifty Builds",       max:10, per:{build:.02},          desc:"−2% machine build cost / rank"},
-  {id:"fuel",     tier:2, name:"Fuel Economy",         max:8,  per:{fuel:.03},           desc:"−3% generator fuel use / rank"},
-  {id:"recycle",  tier:2, name:"Recyclers",            max:10, per:{input:.015},         desc:"−1.5% all input costs / rank"},
-  {id:"precision",tier:2, name:"Precision Tooling",    max:10, per:{mkcost:.03},         desc:"−3% Mk upgrade cost / rank"},
-  {id:"master",   tier:3, name:"Master Extractor",     max:10, per:{rawcost:.05},        desc:"−5% raw material cost / rank"},
-  {id:"zerowaste",tier:3, name:"Zero Waste",           max:10, per:{input:.02},          desc:"−2% all input costs / rank"},
-  {id:"overhaul", tier:3, name:"Grand Overhaul",       max:5,  per:{build:.03,mkcost:.03},desc:"−3% build & Mk cost / rank"},
+  {id:"extract",  tier:1, name:"Efficient Extraction", max:12, per:{rawcost:.03},        desc:"−3% raw material cost / rank"},
+  {id:"lean",     tier:1, name:"Lean Process",         max:20, per:{input:.015},         desc:"−1.5% all input costs / rank"},
+  {id:"thrifty",  tier:1, name:"Thrifty Builds",       max:20, per:{build:.02},          desc:"−2% machine build cost / rank"},
+  {id:"fuel",     tier:2, name:"Fuel Economy",         max:15, per:{fuel:.03},           desc:"−3% generator fuel use / rank"},
+  {id:"recycle",  tier:2, name:"Recyclers",            max:15, per:{input:.015},         desc:"−1.5% all input costs / rank"},
+  {id:"precision",tier:2, name:"Precision Tooling",    max:15, per:{mkcost:.03},         desc:"−3% Mk upgrade cost / rank"},
+  {id:"bulkbuy",  tier:2, name:"Bulk Purchasing",      max:15, per:{build:.02},          desc:"−2% machine build cost / rank"},
+  {id:"master",   tier:3, name:"Master Extractor",     max:12, per:{rawcost:.05},        desc:"−5% raw material cost / rank"},
+  {id:"zerowaste",tier:3, name:"Zero Waste",           max:15, per:{input:.02},          desc:"−2% all input costs / rank"},
+  {id:"nanotool", tier:3, name:"Nanotooling",          max:12, per:{mkcost:.04},         desc:"−4% Mk upgrade cost / rank"},
+  {id:"overhaul", tier:3, name:"Grand Overhaul",       max:10, per:{build:.03,mkcost:.03},desc:"−3% build & Mk cost / rank"},
 ];
-const TIER_REQ = {1:0, 2:5, 3:15};                 // total Talent Points spent to unlock each tier
+const TIER_REQ = {1:0, 2:8, 3:24};                 // total Talent Points spent to unlock each tier
 const talentCost = (t,rank) => t.tier * (rank+1);  // rising cost per rank
 function talentSpent(){ let s=0; for(const t of TALENTS){ const r=state.talents[t.id]||0; s += t.tier*r*(r+1)/2; } return s; }
 const tierUnlocked = tier => talentSpent() >= TIER_REQ[tier];
@@ -895,16 +897,22 @@ const patentsUnlocked = () => (state.stats.bpEarned||0) >= PATENT_UNLOCK || (sta
 // ---- Ascension: the deepest (4th) prestige layer — the "hundreds of hours" engine -----------
 // Unlocked by reaching the Interstellar Age. Ascending collapses everything below it (factory, BP,
 // tree, Patents, Fleet) and RE-LOCKS the ages, granting 🌑 Dark Matter based on Blueprints earned this
-// era. Distinct from Patents: Dark Matter doesn't buy +% — it buys AUTOMATION that runs & reshapes the
-// LOWER prestige loops for you, so the shallow game plays itself while you operate at cosmic scale.
+// era. Dark Matter buys PERMANENT POWER that carries across every future era (the real reward — these
+// stack forever and are the endless sink), plus a set of OPTIONAL automations you can switch on to idle
+// the lower loops once you've mastered them. The power upgrades are the spine; automation is a convenience.
 const DM_AUTO = [
-  {id:"bpAuto",    name:"Blueprint Autopilot", ic:"🌳", cost:1,  max:1,  desc:"Auto-allocate earned Blueprints into the best tree nodes — no more clicking 300 nodes"},
-  {id:"talAuto",   name:"Talent Autopilot",    ic:"🎯", cost:1,  max:1,  desc:"Auto-spend Talent Points as you earn them"},
-  {id:"headStart", name:"Genesis Cache",       ic:"📦", cost:2,  max:10, desc:"Every reset begins pre-seeded with machines & Credits (bigger per level) — faster re-climbs"},
-  {id:"autoRes",   name:"Auto-Restructure",    ic:"♻", cost:3,  max:1,  desc:"Automatically Restructure once a run's Blueprint yield peaks"},
-  {id:"autoPat",   name:"Auto-Patent",         ic:"⚛", cost:8,  max:1,  desc:"Automatically File a Patent whenever it would grant one"},
-  {id:"autoAsc",   name:"Auto-Ascend",         ic:"🌑", cost:25, max:1,  desc:"Automatically Ascend whenever it would grant Dark Matter — the loop runs itself"},
-  {id:"paradox",   name:"Paradox Engine",      ic:"♾️", cost:10, max:99, desc:"+25% Ascendant Foundation strength per level — the endless Dark Matter sink; every level makes each era start higher"},
+  // ── Permanent power (kept forever; the main draw & the endless Dark Matter sink) ──
+  {id:"darkStar",  kind:"power", name:"Dark Star",        ic:"⭐", cost:3,  max:99, desc:"+8% global production per level — permanent, across every era"},
+  {id:"cosmicGrid",kind:"power", name:"Cosmic Grid",      ic:"🌌", cost:4,  max:99, desc:"+12% generator output and +6 MW grid/age per level — permanent"},
+  {id:"voidMarket",kind:"power", name:"Void Market",      ic:"💠", cost:5,  max:99, desc:"+15% sale value and +15% contract payouts per level — permanent"},
+  {id:"headStart", kind:"power", name:"Genesis Cache",    ic:"📦", cost:2,  max:15, desc:"Every reset begins pre-seeded with machines & Credits (bigger per level) — faster re-climbs"},
+  {id:"paradox",   kind:"power", name:"Paradox Engine",   ic:"♾️", cost:10, max:99, desc:"+25% Ascendant Foundation strength per level — every level makes each era start higher"},
+  // ── Optional automation (idle the lower loops once you've mastered them; togglable) ──
+  {id:"bpAuto",    kind:"auto",  name:"Blueprint Autopilot", ic:"🌳", cost:6,  max:1,  desc:"Auto-allocate earned Blueprints into the best tree nodes — optional, pausable"},
+  {id:"talAuto",   kind:"auto",  name:"Talent Autopilot",    ic:"🎯", cost:6,  max:1,  desc:"Auto-spend Talent Points as you earn them — optional, pausable"},
+  {id:"autoRes",   kind:"auto",  name:"Auto-Restructure",    ic:"♻", cost:10, max:1,  desc:"Automatically Restructure once a run's Blueprint yield peaks — optional, pausable"},
+  {id:"autoPat",   kind:"auto",  name:"Auto-Patent",         ic:"⚛", cost:14, max:1,  desc:"Automatically File a Patent whenever it would grant one — optional, pausable"},
+  {id:"autoAsc",   kind:"auto",  name:"Auto-Ascend",         ic:"🌑", cost:30, max:1,  desc:"Automatically Ascend whenever it would grant Dark Matter — optional, pausable"},
 ];
 const ASCEND_UNLOCK_AGE = 7;                       // reach the Interstellar Age to unlock Ascension
 const ASCEND_SCALE = 300;                          // Blueprints-earned-this-era per √ Dark Matter
@@ -1076,6 +1084,11 @@ function recomputeStats(){
   for(const t of TALENTS){ const r=state.talents[t.id]||0; if(r>0) for(const k in t.per) s[k]=(s[k]||0)+t.per[k]*r; }
   for(const p of PATENTS){ const l=state.patentUpg[p.id]||0; if(l>0) for(const k in p.per) s[k]=(s[k]||0)+p.per[k]*l; }
   const agesBeyond=Math.max(0,(state.maxAge||1)-1); if(agesBeyond>0) s.prod=(s.prod||0)+0.10*agesBeyond; // permanent per-age dividend
+  // Ascension permanent-power upgrades (Dark Matter) fold in like everything else — these carry across every era.
+  const dmu=state.dmUpg||{};
+  if(dmu.darkStar)   s.prod=(s.prod||0)+0.08*dmu.darkStar;
+  if(dmu.cosmicGrid){ s.power=(s.power||0)+0.12*dmu.cosmicGrid; s.gridPerAge=(s.gridPerAge||0)+6*dmu.cosmicGrid; }
+  if(dmu.voidMarket){ s.sell=(s.sell||0)+0.15*dmu.voidMarket; s.contractPay=(s.contractPay||0)+0.15*dmu.voidMarket; }
   const wf=workforceBonus(); if(wf>0) s.prod=(s.prod||0)+wf;         // Robotic-age workforce (in-run)
   statCache=s;
 }
@@ -1087,8 +1100,8 @@ const globalRate   = () => (1 + st("prod") + fleetBonus() + accBonus() + veinBon
   + st("prodPerMachine")*(totalMachines()/100)      // SYNERGY node: +production per 100 machines
   + st("whProd")*(state.warehouses||0))             // MECHANIC node: warehouses also boost production
   * forkMult();                                     // Reality Forking (Age VIII signature): parallel branches multiply ALL output
-const inputEff     = () => Math.max(0.4, 1 - st("input"));
-const rawEff       = () => Math.max(0.2, 1 - st("rawcost"));   // extra reduction on tier-0 (raw) inputs
+const inputEff     = () => Math.max(0.3, 1 - st("input"));
+const rawEff       = () => Math.max(0.15, 1 - st("rawcost"));  // extra reduction on tier-0 (raw) inputs
 const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
 const marketMult   = () => 1 + st("sell") + st("sellPerItem")*unlockedItemCount();   // SYNERGY node: +sale value per unlocked item
 // Market demand (Layer 2). DEMAND_FLOOR = worst price when a market is fully flooded; DEPTH_K scales how much you
@@ -1106,8 +1119,8 @@ function sellValue(id, qty){
   demandSat[id] = s1;
   return qty * ITEMS[id].sell * marketMult() * avg;
 }
-const buildDiscount= () => Math.max(0.4, 1 - st("build"));
-const mkDiscount   = () => Math.max(0.4, 1 - st("mkcost"));
+const buildDiscount= () => Math.max(0.3, 1 - st("build"));
+const mkDiscount   = () => Math.max(0.3, 1 - st("mkcost"));
 const offlineEff   = () => Math.min(1, 0.5 + st("offeff"));
 const offlineCap   = () => (4 + st("offcap")) * 3600;
 const orePerClick  = () => 1 + Math.floor(state.prestiges/2) + st("click");
@@ -2168,13 +2181,18 @@ function updateUI(){
     if(body.dataset.asig!==asig){ body.dataset.asig=asig;
       let html=`<div class="toolrow"><button class="b mk" id="ascendBtn" style="max-width:290px"><span>🌑 Ascend</span><small id="ascSub"></small></button>
         <span class="muted" style="font-size:12px">This era: <b class="num" id="ascEra"></b> 📐 earned · <b>${fmt(state.ascensions||0)}</b> ascensions. Dark Matter upgrades, mastery &amp; age record are kept.</span></div>
-        <div class="grid" style="margin-top:10px">`;
-      for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, maxed=l>=u.max;
+        <div style="margin-top:8px;font-weight:700;font-size:13px">🌠 Permanent power <span class="muted" style="font-weight:400;font-size:11px">— kept across every era; the endless sink</span></div>
+        <div class="grid" style="margin-top:6px">`;
+      let lastKind="power";
+      for(const u of DM_AUTO){ const l=state.dmUpg[u.id]||0, maxed=l>=u.max, kind=u.kind||"power";
+        if(kind!==lastKind){ lastKind=kind;
+          html+=`</div><div style="margin-top:12px;font-weight:700;font-size:13px">🤖 Optional automation <span class="muted" style="font-weight:400;font-size:11px">— idle the lower loops; switch on/off anytime</span></div><div class="grid" style="margin-top:6px">`; }
         const owned=l>0, paused=owned && state.dmOff && state.dmOff[u.id];
         const status = u.max>1 ? `<span class="mk">Lv ${l}/${u.max}</span>` : (owned?(paused?`<span class="warn" style="font-size:11px">⏸ paused</span>`:`<span class="pos" style="font-size:11px">✓ active</span>`):``);
         const btnLabel = maxed ? (u.max>1?"MAX":"✓ active") : `${owned&&u.max>1?"Upgrade":"Activate"} <small>🌑 ${dmCost(u,l)}</small>`;
+        const canPause = kind==="auto" && owned;
         html+=`<div class="mc${owned?' done':''}${paused?' starv':''}"><div class="ic">${u.ic}</div><div><div class="name">${u.name} ${status}</div><div class="rec">${u.desc}</div></div>
-          <div class="btns"><button class="b mk" data-dm="${u.id}">${btnLabel}</button>${owned?`<button class="b" data-dmtoggle="${u.id}" style="max-width:104px">${paused?'▶ Resume':'⏸ Pause'}</button>`:``}</div></div>`;
+          <div class="btns"><button class="b mk" data-dm="${u.id}">${btnLabel}</button>${canPause?`<button class="b" data-dmtoggle="${u.id}" style="max-width:104px">${paused?'▶ Resume':'⏸ Pause'}</button>`:``}</div></div>`;
       }
       body.innerHTML=html+`</div>`;
     }
@@ -2576,6 +2594,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.45.0","Tuning pass on progression depth from playtest notes. (1) <b>The tree earns power later.</b> The first two rings of every arm gave big boosts too cheaply — those are trimmed, so early play is about <i>enabling</i> your factory rather than instantly snowballing it. (2) <b>Automation comes early:</b> the <b>Auto-Builder is now a first-ring Engineering node</b> you can grab right away, so hands-off building is an early convenience, not a mid-game reward. (3) <b>Talents run much deeper</b> — most talents gained ~50–100% more ranks, two new talents were added (Bulk Purchasing, Nanotooling), the efficiency caps were raised so those extra ranks keep paying off, and the higher tiers unlock over a longer investment. No more maxing the whole talent board in an afternoon. (4) <b>Ascension is a real power layer now.</b> Dark Matter used to only buy automations that played the game <i>for</i> you — the decisions you actually enjoy. Now it buys <b>permanent power that carries across every era</b>: ⭐ Dark Star (global production), 🌌 Cosmic Grid (power + grid), 💠 Void Market (sales + contracts), plus the returning Genesis Cache and Paradox Engine — all repeatable, the endless sink. The automations are still there, but they're now an <b>optional</b> section you switch on only if you want to idle a loop. <b>Your tree was refunded</b> again for the layout change."],
   ["0.44.0","Two big reworks from playtest feedback. (1) The Advancement tree is <b>rebuilt from scratch</b>: gone are the ~300 repetitive '+x% this' nodes, replaced by ~76 hand-crafted ones where about half do something distinctive — synergies that scale with how you play, rule-changing mechanics, tradeoffs, and chunky stat jumps that each actually move the needle. Every arm is a focused, themed path to a keystone. <b>Your tree was refunded</b> so you can re-plan freely in the new layout. (2) <b>Ore Veins are now evergreen.</b> Prospecting used to die the moment you automated; now the charge meter fills on its own from your raw output (and faster if you mine by hand), and striking a vein surges your <b>whole factory's</b> production, not just raw ore. New: <b>Depth</b> — each strike digs deeper, and deeper veins are bigger (Surface Seam → Rich Vein → Deep Lode → 🌋 Mother Lode). Idle play sustains the small ones; active mining drives the Mother Lodes. The Engineering arm has new nodes to tune all of it. (Power also got more generous to match the leaner tree — the grid floor now grows each age, and the Power arm's generators scale much harder.)"],
   ["0.43.0","The Advancement tree finally looks like a map. Each of the six arms now has its own <b>colour</b> — a tinted sector wedge and a labelled banner at its tip (⚙️ INDUSTRY, 📦 LOGISTICS, ⚡ POWER, 💹 COMMERCE, 🔧 ENGINEERING, ✨ ASCENDANCY) with a live <b>allocated-count</b> under each, so one glance tells you where you are and how far each branch has come. Nodes speak a <b>shape language</b>: the qualitative mechanic nodes are now ◈ hexagons marked in their arm's colour, keystones are proper ★ stars with a halo ring, and available frontier nodes gently pulse. Faint <b>ring guides</b> mark every 4th ring, cross-arm links render dashed so weaves read differently from spines, and the stats summary above the canvas is now a row of <b>chips</b> — with your active mechanics called out in their own purple chip."],
   ["0.42.0","The playtest update — built from real player feedback. (1) <b>Buttons now respond on the first press, everywhere.</b> The Ascension and Patents panels were rebuilding their buttons ten times a second (if you played in the Dark Matter system, you felt it), and action buttons now trigger the instant you press down instead of waiting for a full click. (2) <b>The tree got 10 more build-defining nodes</b> — one at rings 8 and 16 of every arm: Cross-Docking (terminals sell 75% faster), Deep Reserves (overstock clears down to 70%), Flash Capacitors (2× accumulator charging), Superconductors (+4 MW grid per age), Trade Contacts (+40% contract payouts), Market Makers (2× market recovery), Master Machinists (Mk levels give +65%), Geologist's Eye (2× Rich Vein duration), Patent Attorneys (−25% patent cost), and Event Horizon (+1 🌑 per Ascension). (3) <b>Contracts stay relevant at any scale</b>: order sizes now grow with your production rate (1–2.5 minutes of your output), and after fulfilling or skipping, the next buyer takes ~25s to arrive — no more spam-filling trivial orders. Market demand depth also scales with your output so prices aren't permanently floor-pinned late-game. (4) <b>The early game breathes</b>: Age III now needs 4 Blueprints (and Age IV 15), so the Restructure loop matters from the first hour instead of the ages blurring past."],

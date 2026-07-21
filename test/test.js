@@ -33,7 +33,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
     return flat / tot < 0.5;   // fewer than half are single-stat flat boosts
   })());
   eq("milestone count", E.MILESTONES.length, 18);
-  eq("talent count", E.TALENTS.length, 9);
+  eq("talent count", E.TALENTS.length, 11);
   eq("fresh: only Core allocated", Object.keys(s.allocated).length, 1);
   eq("fresh: base multipliers", E.globalRate(), 1);
 })();
@@ -279,7 +279,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 (() => {
   // set up: auto unlocked, Age IV, two flagged machines — Miner (empty output) vs Iron Furnace (full output)
   fresh();
-  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();   // Auto-Builder node
+  E.state.allocated["eng_1_s0"] = true; E.recomputeStats();   // Auto-Builder node
   E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.unlocked.miner = true; E.state.unlocked.ironFurnace = true;
   E.state.auto = { miner: true, ironFurnace: true };
@@ -291,7 +291,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // whole-factory auto-pilot: balances UNLOCKED machines even with NOTHING flagged (no per-machine opt-in)
   fresh();
-  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();
+  E.state.allocated["eng_1_s0"] = true; E.recomputeStats();
   E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.unlocked.miner = true; E.state.auto = {};            // nothing flagged
   E.state.items.ironOre = 0;                                    // miner's output empty (demanded)
@@ -300,7 +300,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // auto-pilot also adds storage when a buffer caps
   fresh();
-  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();
+  E.state.allocated["eng_1_s0"] = true; E.recomputeStats();
   E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.items.brick = 1e4;                                    // warehouse BOM
   E.state.items.ironOre = E.capOf("ironOre");                   // a buffer is capped
@@ -310,7 +310,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // with balance OFF it buys 1 of each flagged instead
   fresh();
-  E.state.allocated["eng_2_s0"] = true; E.recomputeStats();
+  E.state.allocated["eng_1_s0"] = true; E.recomputeStats();
   E.state.autoOn = true; E.state.autoBalance = false; E.state.maxAge = 4; E.state.credits = 1e9;
   E.state.unlocked.miner = true; E.state.unlocked.ironFurnace = true;
   E.state.auto = { miner: true, ironFurnace: true };
@@ -1072,7 +1072,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   E.ascend(4);
   ok("ascend banks spendable Dark Matter", E.state.darkMatter === 4);
   ok("ascend accrues lifetime dmEarned", E.state.stats.dmEarned === 4);
-  E.upgradeDM("bpAuto"); // spend some darkMatter
+  E.upgradeDM("darkStar"); // spend some darkMatter (cost 3)
   ok("spending Dark Matter does NOT reduce lifetime dmEarned (gate stays cleared)", E.state.stats.dmEarned === 4 && E.state.darkMatter < 4);
 
   // dmEarned is the Age-VIII gate — spending the balance can't re-lock the age
