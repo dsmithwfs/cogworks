@@ -435,7 +435,16 @@ The endgame layer *above* Blueprints. Unlocks once you've earned **15 Blueprints
 The **4th prestige layer** and the "hundreds of hours" engine. Unlocked by reaching the **Interstellar
 Age** (`ascensionUnlocked = maxAge ≥ 7`). **Ascending** (`ascend()`) is the deepest reset — it wipes the
 factory *and* every layer below it (Blueprints, tree, **Patents**, the **Fleet**) and **re-locks the ages**
-(`stats.bpEarned = 0`). It grants **Dark Matter** = `floor(√(bpEarned_this_era / ASCEND_SCALE(300)))`.
+(`stats.bpEarned = 0`). It grants **Dark Matter** = `floor(√(bpEarned_this_era / ASCEND_SCALE(120)))`.
+
+**Rebalanced v0.47.0 from `test/pace.js`.** `ASCEND_SCALE` was **300**, which yielded only **2–3 DM per
+~12h era** against a sink costing **45 DM** (Dark Star ×5) to **150** (Paradox ×5) — the layer was 10–20×
+out of reach, so lifetime `dmEarned` crawled and the Ascendant Foundation never compounded: production sat
+**flat at ~8× across 11 eras**, the "plateau, not staircase" failure from Phase 6 all over again. Fix:
+`ASCEND_SCALE` 300→**120** and cheaper power bases (`darkStar` 3→2, `cosmicGrid` 4→3, `voidMarket` 5→3,
+`paradox` 10→6). Sim after: **4 DM/era**, Age VIII's `AGE_DM=30` gate cleared at **era 8** (previously never
+within 12), production compounding **3.2 → 17×**, and `maxAge` finally climbing to VII. Era length is
+unchanged (~10–13h), so this bought *progression*, not *speed*.
 
 **What Dark Matter buys — revised v0.45.0.** Originally Dark Matter bought *only* meta-automation, on the
 theory that Ascension had to differ from the (then "+stat") Patents layer. Playtest rejected that too:

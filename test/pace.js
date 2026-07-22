@@ -23,10 +23,24 @@ function strategize() {
   for (const k of E.MORDER) { if (!s.unlocked[k] || (s.machines[k] || 0) > 0) continue; const p = E.planMachine(k, 1), bom = E.scaleBOM(E.buildBOM(k), p.n); if (p.n > 0 && E.canAfford(p.cost, bom)) { E.pay(p.cost, bom); s.machines[k] += p.n; s.stats.built += p.n; E.refreshUnlocks(true); } }
   fundPower();
   for (const id in E.ITEMS) { if (E.itemUnlocked(id) && (s.items[id] || 0) >= E.capOf(id) - 1e-6) { const p = E.planWarehouse(1); if (p.n > 0 && E.canAfford(p.cost, E.scaleBOM(E.WAREHOUSE.bom, p.n))) { E.pay(p.cost, E.scaleBOM(E.WAREHOUSE.bom, p.n)); s.warehouses += p.n; } break; } }
-  for (let i = 0; i < 150; i++) { let best = null, bestFill = Infinity;
-    for (const k of E.MORDER) { if (!s.unlocked[k]) continue; const p = E.planMachine(k, 1); if (p.n <= 0) continue; const bom = E.scaleBOM(E.buildBOM(k), 1); if (!E.canAfford(p.cost, bom)) continue;
+  // POWER-GATED EXPANSION: only add load when the grid can actually carry it. The old loop bought 150
+  // machines/tick regardless, so the AI dug itself into a 39%-power hole and then "proved" the late game
+  // was unreachable — a sim artefact, not a balance fact. A real player powers what they build.
+  // When the grid is healthy, expand freely. When it's brown, DON'T stop building outright — a run seeded
+  // by the Ascendant Foundation starts with a big machine pyramid and no generators, and refusing to build
+  // would also refuse the low-tier machines that make the steel/circuits generators need. So while brown,
+  // build only cheap low-tier feeders (which barely draw) until power catches up.
+  E.computePower(0.001);
+  const brown = E.lastPower.ratio <= 0.98;
+  const cap = brown ? 25 : 150;
+  for (let i = 0; i < cap; i++) { let best = null, bestFill = Infinity;
+    for (const k of E.MORDER) { if (!s.unlocked[k]) continue;
+      if (brown && E.MACHINES[k].t > 3) continue;                  // brown-out: feeders only
+      const p = E.planMachine(k, 1); if (p.n <= 0) continue; const bom = E.scaleBOM(E.buildBOM(k), 1); if (!E.canAfford(p.cost, bom)) continue;
       const out = Object.keys(E.MACHINES[k].out)[0]; const fill = (E.state.items[out] || 0) / E.capOf(out); if (fill < bestFill) { bestFill = fill; best = k; } }
-    if (!best) break; const p = E.planMachine(best, 1); E.pay(p.cost, E.scaleBOM(E.buildBOM(best), 1)); s.machines[best] += p.n; s.stats.built += p.n; E.refreshUnlocks(true); }
+    if (!best) break; const p = E.planMachine(best, 1); E.pay(p.cost, E.scaleBOM(E.buildBOM(best), 1)); s.machines[best] += p.n; s.stats.built += p.n; E.refreshUnlocks(true);
+    if (!brown && i % 10 === 9) { E.computePower(0.001); if (E.lastPower.ratio < 0.98) break; }   // re-check as load grows
+  }
   fundPower();   // power the machines we just scaled (a real player wouldn't leave the grid at 5%)
 }
 // Build generators until the grid is satisfied (or credits run out) — spends only a slice of credits so it doesn't
@@ -79,20 +93,50 @@ function restructure() {
   E.freshRun(E.state); E.recomputeStats(); reinvestBP(); reinvestTP();
   return gain;
 }
-// Greedily buy the cheapest affordable Dark Matter automation (headStart is the one that speeds re-climbs).
-function buyDM() {
+// ---- PATENTS: the v0.46.0 preservation layer. The sim ignored this entirely, which understated
+// progression badly — it's the layer that decides how fast each post-reset rebuild goes.
+// Buy order = what actually shortens the next climb most: the tree back first, then the tech chain.
+function buyPatents() {
+  const pref = ["priorArt", "standing", "grandfather", "chartered", "vault", "franchise"];
   let bought = true;
   while (bought) { bought = false;
-    for (const u of E.DM_AUTO) { const l = E.state.dmUpg[u.id] || 0; if (l >= u.max) continue; const c = E.dmCost(u, l);
-      if ((E.state.darkMatter || 0) >= c) { E.state.darkMatter -= c; E.state.dmUpg[u.id] = l + 1; bought = true; } } }
+    for (const id of pref) { const p = E.PATENTS.find((x) => x.id === id); if (!p) continue;
+      const l = E.state.patentUpg[id] || 0, c = E.patentCost(p, l);
+      if ((E.state.patents || 0) >= c) { E.state.patents -= c; E.state.patentUpg[id] = l + 1; bought = true; break; } } }
 }
-function fullyAutomated() { return E.DM_AUTO.every(u => (E.state.dmUpg[u.id] || 0) >= u.max); }
+// File only when the cycle banked a haul worth torching the tree for (filing wipes BP + tree), and
+// never late in an era — a player about to Ascend/push does NOT throw their built tree away first.
+function maybePatent(eraFrac) {
+  const gain = E.patentAvailable();
+  if (gain < 3) return 0;
+  if (eraFrac > 0.6) return 0;
+  E.state.patents = (E.state.patents || 0) + gain;
+  E.state.blueprints = 0; E.state.allocated = { start: true }; E.state.bpCycle = 0;
+  E.freshRun(E.state); E.recomputeStats();
+  buyPatents();               // bought AFTER the reset — like the real game, these land on the NEXT rebuild
+  reinvestBP(); reinvestTP();
+  return gain;
+}
+// Buy Dark Matter the way a player would: Genesis Cache first (compounds every re-climb), then the
+// v0.45.0 permanent-power sink, then the optional automations. Re-scans from the top after each buy.
+function buyDM() {
+  const order = ["headStart", "darkStar", "cosmicGrid", "voidMarket", "paradox", "bpAuto", "talAuto", "autoRes", "autoPat", "autoAsc"];
+  let bought = true;
+  while (bought) { bought = false;
+    for (const id of order) { const u = E.DM_AUTO.find((x) => x.id === id); if (!u) continue;
+      const l = E.state.dmUpg[id] || 0; if (l >= u.max) continue;
+      if (id === "headStart" && l >= 10) continue;      // taper so it doesn't sink everything into the cache
+      const c = E.dmCost(u, l);
+      if ((E.state.darkMatter || 0) >= c) { E.state.darkMatter -= c; E.state.dmUpg[id] = l + 1; bought = true; break; } } }
+}
+const autoCount = () => E.DM_AUTO.filter((u) => u.kind === "auto" && (E.state.dmUpg[u.id] || 0) > 0).length;
+const powerLvls = () => ["darkStar", "cosmicGrid", "voidMarket"].reduce((a, id) => a + (E.state.dmUpg[id] || 0), 0);
 
 // Run one ERA: Restructure-loop until we've earned enough BP to have reached Age VIII (AGE_REQ[8]).
 // Returns { sec, loops, reachedAge }. Caps to avoid runaway.
 function runEra(maxSec) {
   const AGE8 = E.AGE_REQ[E.AGE_REQ.length - 1];
-  let sec = 0, loops = 0;
+  let sec = 0, loops = 0, pats = 0;
   E.state.stats.bpEarned = 0; // era starts with ages re-locked
   E.state.blueprints = 0; E.state.allocated = { start: true }; E.state.bpCycle = 0;
   E.state.patents = 0; E.state.patentUpg = {}; E.state.fleet = 0; E.state.launched = 0;
@@ -103,16 +147,17 @@ function runEra(maxSec) {
     let t = 0, loopCap = 6 * 3600;
     for (; t < loopCap && sec < maxSec; t++, sec++) { tick(); if (E.bpFor(E.state.runCredits) >= target) break; }
     restructure(); loops++;
+    pats += maybePatent(E.state.stats.bpEarned / AGE8) > 0 ? 1 : 0;   // the preservation layer, modelled (v0.46.0)
     if (E.bpFor(E.state.runCredits) < 1 && E.state.stats.bpEarned < AGE8 && t >= loopCap) break; // dead stall
   }
-  return { sec, loops, reachedAge: E.state.maxAge, maxAge: E.state.maxAge, bpEarned: E.state.stats.bpEarned };
+  return { sec, loops, pats, reachedAge: E.state.maxAge, maxAge: E.state.maxAge, bpEarned: E.state.stats.bpEarned };
 }
 
 // PUSH RUN: stop restructuring, run one long sustained run, record when each age is first reached.
 // This is what a player chasing the top actually does — it answers "is Age VIII reachable, and how long?"
 function pushRun(maxSec) {
-  E.state.blueprints = 0; E.state.allocated = E.state.allocated; // keep tree
-  E.freshRun(E.state); E.recomputeStats();
+  E.freshRun(E.state); E.recomputeStats(); E.refreshUnlocks(true);   // re-reveal generators/machines the seeded pyramid qualifies for
+  reinvestBP(); reinvestTP();   // a player pushing for the top spends their banked Blueprints first
   const firstReach = {}; let sec = 0;
   for (; sec < maxSec; sec++) {
     tick();
@@ -125,7 +170,7 @@ function pushRun(maxSec) {
 
 console.log("=== FULL-GAME PACING: game-time to reach Age VIII, across Ascension eras ===");
 console.log(`AGE_REQ = [${E.AGE_REQ.join(", ")}]  · AGE_DM(VIII) = ${E.AGE_DM[E.AGE_DM.length - 1]}  · ASCEND_SCALE = ${E.ASCEND_SCALE}`);
-console.log("era | era time | loops | prod× | maxAge | DM(era) | dmEarned | automations bought");
+console.log("era | era time | loops | pats | prod× | maxAge | DM(era) | dmEarned | DMpow | autos");
 E.state = E.defaultState(); E.recomputeStats();
 let cumSec = 0, cumDM = 0, eraToFull = null;
 for (let era = 1; era <= 12; era++) {
@@ -136,15 +181,16 @@ for (let era = 1; era <= 12; era++) {
   E.state.darkMatter = (E.state.darkMatter || 0) + dm; E.state.ascensions++;
   E.state.stats.dmEarned = (E.state.stats.dmEarned || 0) + dm;   // lifetime DM — drives the gate + Ascendant Foundation
   cumDM += dm; buyDM();
-  const autos = E.DM_AUTO.filter(u => (E.state.dmUpg[u.id] || 0) >= u.max).map(u => u.ic).join("");
-  if (fullyAutomated() && eraToFull === null) eraToFull = era;
+  if (autoCount() === E.DM_AUTO.filter(u => u.kind === "auto").length && eraToFull === null) eraToFull = era;
   console.log(
     String(era).padStart(3) + " | " + clock(r.sec).padStart(8) + " | " + String(r.loops).padStart(5) + " | " +
+    String(r.pats).padStart(4) + " | " +
     String(+E.globalRate().toFixed(1)).padStart(5) + " | " + String(r.maxAge).padStart(6) + " | " +
-    String(dm).padStart(7) + " | " + String(E.state.stats.dmEarned).padStart(8) + " | " + autos);
+    String(dm).padStart(7) + " | " + String(E.state.stats.dmEarned).padStart(8) + " | " +
+    String(powerLvls()).padStart(5) + " | " + String(autoCount()) + "/5");
 }
 console.log(`\ncumulative game-time over the eras above: ${clock(cumSec)}   ·   total Dark Matter earned: ${cumDM}`);
-console.log(`fully-automated (all 6 DM upgrades) by era: ${eraToFull || "not yet"}`);
+console.log(`all 5 optional automations owned by era: ${eraToFull || "not yet"}`);
 
 // Now: with the mature meta built above, can a dedicated PUSH RUN reach the top?
 console.log(`\n=== PUSH RUN (no restructuring) with the mature meta from era ${12} ===`);
@@ -154,9 +200,23 @@ console.log("first reached each age at:  " + Object.entries(push.firstReach).map
 // Diagnose the ceiling: what's capping production at the top?
 const lp = E.lastPower;
 console.log(`\nCEILING DIAGNOSIS at end of push run:`);
-console.log(`  power: supply=${fmt(lp.supply)}MW demand=${fmt(lp.demand)}MW ratio=${(lp.ratio*100).toFixed(0)}% · globalRate=${E.globalRate().toFixed(1)}× · tree ${E.state.stats.allocs}/${Object.keys(E.NODES).length} nodes · fleet=${fmt(E.state.fleet)} · swarm=${E.state.dysonSwarm}`);
+console.log(`  power: supply=${fmt(lp.supply)}MW demand=${fmt(lp.demand)}MW ratio=${(lp.ratio*100).toFixed(0)}% · globalRate=${E.globalRate().toFixed(1)}× · tree ${Object.keys(E.state.allocated).length-1}/${Object.keys(E.NODES).length} nodes · fleet=${fmt(E.state.fleet)} · swarm=${E.state.dysonSwarm}`);
+console.log(`  generators: ` + E.GORDER.map(g => `${g}=${E.state.generators[g]||0}`).join("  ") + `  · patents: ` + E.PATENTS.map(p=>`${p.id}=${E.state.patentUpg[p.id]||0}`).join(" "));
 const topMach = ["dysonFoundry","antimatterReactor","starScoop","quantumFab","matrioshka","realityCompiler"];
 console.log(`  top machines built: ` + topMach.map(k => `${k}=${E.state.machines[k]||0}`).join("  "));
 const topItems = ["hydrogen","antimatter","dysonPanel","qubit","simMatter","realityShard"];
 console.log(`  top items (have/cap): ` + topItems.map(k => `${k}=${Math.floor(E.state.items[k]||0)}/${E.capOf(k)}`).join("  "));
+// What is actually blocking the climb? For each tier, report unlock state and whether inputs are flowing.
+const AGES_N = E.AGE_REQ.length - 1;
+console.log(`  age gates: bpEarned=${fmt(E.state.stats.bpEarned)} dmEarned=${E.state.stats.dmEarned} · ` +
+  Array.from({ length: AGES_N }, (_, i) => i + 1).map(a => `${E.ROMAN[a]}${E.ageUnlocked(a) ? "✓" : "✗"}`).join(" "));
+console.log("  frontier machines (highest 8 by tier):");
+for (const k of E.MORDER.slice(-8)) {
+  const m = E.MACHINES[k], req = m.unlock || {};
+  const missing = Object.keys(req).filter(r => (E.state.machines[r] || 0) < req[r]).map(r => `${r}<${req[r]}`);
+  const starved = Object.keys(m.in || {}).filter(r => (E.state.items[r] || 0) < 1);
+  console.log(`    t${m.t} ${k}: built=${E.state.machines[k]||0} unlocked=${!!E.state.unlocked[k]}` +
+    ` ageGate=${E.ageUnlocked(E.TIER_AGE[m.t]) ? "ok" : "LOCKED"}` +
+    (missing.length ? ` needs:${missing.join(",")}` : "") + (starved.length ? ` starved:${starved.join(",")}` : ""));
+}
 console.log(`(human wall-clock is est. ~2–3× the game-time, and this AI plays optimally with no idle gaps.)`);

@@ -539,7 +539,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.46.1";
+const VERSION = "0.47.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -911,11 +911,11 @@ const patentsUnlocked = () => (state.stats.bpEarned||0) >= PATENT_UNLOCK || (sta
 // the lower loops once you've mastered them. The power upgrades are the spine; automation is a convenience.
 const DM_AUTO = [
   // ── Permanent power (kept forever; the main draw & the endless Dark Matter sink) ──
-  {id:"darkStar",  kind:"power", name:"Dark Star",        ic:"⭐", cost:3,  max:99, desc:"+8% global production per level — permanent, across every era"},
-  {id:"cosmicGrid",kind:"power", name:"Cosmic Grid",      ic:"🌌", cost:4,  max:99, desc:"+12% generator output and +6 MW grid/age per level — permanent"},
-  {id:"voidMarket",kind:"power", name:"Void Market",      ic:"💠", cost:5,  max:99, desc:"+15% sale value and +15% contract payouts per level — permanent"},
+  {id:"darkStar",  kind:"power", name:"Dark Star",        ic:"⭐", cost:2,  max:99, desc:"+8% global production per level — permanent, across every era"},
+  {id:"cosmicGrid",kind:"power", name:"Cosmic Grid",      ic:"🌌", cost:3,  max:99, desc:"+12% generator output and +6 MW grid/age per level — permanent"},
+  {id:"voidMarket",kind:"power", name:"Void Market",      ic:"💠", cost:3,  max:99, desc:"+15% sale value and +15% contract payouts per level — permanent"},
   {id:"headStart", kind:"power", name:"Genesis Cache",    ic:"📦", cost:2,  max:15, desc:"Every reset begins pre-seeded with machines & Credits (bigger per level) — faster re-climbs"},
-  {id:"paradox",   kind:"power", name:"Paradox Engine",   ic:"♾️", cost:10, max:99, desc:"+25% Ascendant Foundation strength per level — every level makes each era start higher"},
+  {id:"paradox",   kind:"power", name:"Paradox Engine",   ic:"♾️", cost:6,  max:99, desc:"+25% Ascendant Foundation strength per level — every level makes each era start higher"},
   // ── Optional automation (idle the lower loops once you've mastered them; togglable) ──
   {id:"bpAuto",    kind:"auto",  name:"Blueprint Autopilot", ic:"🌳", cost:6,  max:1,  desc:"Auto-allocate earned Blueprints into the best tree nodes — optional, pausable"},
   {id:"talAuto",   kind:"auto",  name:"Talent Autopilot",    ic:"🎯", cost:6,  max:1,  desc:"Auto-spend Talent Points as you earn them — optional, pausable"},
@@ -924,7 +924,11 @@ const DM_AUTO = [
   {id:"autoAsc",   kind:"auto",  name:"Auto-Ascend",         ic:"🌑", cost:30, max:1,  desc:"Automatically Ascend whenever it would grant Dark Matter — optional, pausable"},
 ];
 const ASCEND_UNLOCK_AGE = 7;                       // reach the Interstellar Age to unlock Ascension
-const ASCEND_SCALE = 300;                          // Blueprints-earned-this-era per √ Dark Matter
+// Blueprints-earned-this-era per √ Dark Matter. Was 300 — the pacing sim showed that yielded only 2–3 DM
+// per ~12h era against a sink costing 45 DM (Dark Star ×5) to 150 (Paradox ×5), i.e. the whole layer was
+// 10–20× out of reach, and lifetime dmEarned crawled so the Ascendant Foundation never compounded
+// (prod× sat flat at ~8 across 11 eras — the "plateau, not staircase" failure again). 120 ≈ doubles income.
+const ASCEND_SCALE = 120;
 const dmCost = (u,lvl) => u.cost * (lvl+1);
 const dmHas = id => (state.dmUpg[id]||0) > 0;
 const dmActive = id => dmHas(id) && !(state.dmOff && state.dmOff[id]);   // owned AND not paused — lets you pause an automation (e.g. to respec)
@@ -1063,6 +1067,18 @@ function freshRun(s){
     const topN=Math.max(2, Math.round((2+dme*0.35)*para));             // count at the highest seeded tier (grows with DM × Paradox)
     for(const key of MORDER){ const t=MACHINES[key].t; if(t<=reach) s.machines[key]=(s.machines[key]||0)+Math.round(topN*Math.pow(2.4, reach-t)); }
     s.credits+=Math.round(50000*dme*para);
+  }
+  // POWER THE HEAD-START. Every seeding block above hands you MACHINES; none of them handed you GENERATORS —
+  // so each new era began in a deep brown-out you could not buy your way out of, because generators cost ITEM
+  // BOMs (ironPlate/gear, steel/circuit) and a reset zeroes your items. You'd sit on millions of Credits at 20%
+  // power waiting for a throttled factory to make 20 iron plates. Seed fuel-free generation to actually RUN what
+  // we just gave you. Sized at genMult=1 (conservative — any real generator bonus becomes headroom, not a deficit).
+  let seededDraw=0;
+  for(const key of MORDER){ const c=s.machines[key]||0; if(c>0) seededDraw += DRAW[MACHINES[key].t]*c; }
+  const needMW = seededDraw - BASE_GRID;
+  if(needMW > 0){
+    s.generators.solar = (s.generators.solar||0) + Math.ceil(needMW / GENERATORS.solar.power);
+    s.unlocked["gen:solar"] = true;
   }
 }
 function defaultState(){
@@ -2627,6 +2643,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.47.0","A balance pass driven by the full-game simulator — and it turned up a real bug. <b>Fixed: every era used to start in a brown-out.</b> Ascending seeded you a big head-start factory but <b>no generators</b> — and since generators cost materials (not Credits) and a reset empties your stores, you'd sit on millions of Credits at ~20% power waiting for a throttled factory to make 20 iron plates. The head-start now comes with <b>enough solar to actually run what it gives you</b>. <b>Rebalanced: Dark Matter was 10–20× out of reach.</b> A ~12h era paid only 2–3 🌑 while a handful of upgrade levels cost 45–150, so the whole Ascension layer was unaffordable and your power never compounded between eras — the sim showed production sitting flat at ~8× across <i>eleven</i> eras. Ascending now pays <b>about double</b>, and the permanent-power upgrades are cheaper (Dark Star, Cosmic Grid, Void Market, Paradox Engine). In the sim this turns a flat line into a real staircase: production now climbs <b>3× → 17×</b> across eras, Age VIII's Dark Matter gate is reachable around <b>era 8</b> instead of never, and you finally push into Age VII. Era length is unchanged — this buys <b>progression</b>, not a speed-up."],
   ["0.46.1","Fixed: after filing a Patent, the Items panel showed only the 3 starting items even though your machines were unlocked. If you owned <b>Standing Claim</b>, its pre-unlocked machines were skipped by the routine that reveals items — so the whole materials list stayed hidden. Every path that unlocks a machine now reveals the items it uses and makes, and there's a test guarding it."],
   ["0.46.0","<b>Patents are completely redesigned.</b> You could play the whole game without ever filing one — and you were right to: filing wiped your Blueprints <i>and</i> your entire Advancement tree, and all you got back was a shop selling '+25% production' and '+50% storage'. That's exactly what the tree already sells, but cheaper. The layer had nothing of its own. So Patents no longer sell bonuses at all. <b>Patents now buy permanence.</b> Everything you patent is <b>grandfathered into every future run</b>, so each re-climb rebuilds less: 🌳 <b>Prior Art</b> — start every run with the first N rings of all six tree arms already allocated; 🔒 <b>Grandfathered Tooling</b> — every machine line starts at Mk N; 📜 <b>Standing Claim</b> — machines up to tier N start unlocked, so you never re-earn the build-prerequisite chain again (it will never skip an age gate); 🏭 <b>Chartered Works</b> — start with Warehouses; 🏪 <b>Franchise Rights</b> — start with Trade Terminals; 💰 <b>Reserve Vault</b> — start with Credits in the bank. A mid-game spread now starts a fresh run at <b>1.7× production, 3.3× storage, 18 free tree nodes, Mk2 across the board and the early chain already unlocked</b> — so filing is something you <i>want</i> to do, and it makes every Restructure and every Ascension re-climb shorter from then on."],
   ["0.45.0","Tuning pass on progression depth from playtest notes. (1) <b>The tree earns power later.</b> The first two rings of every arm gave big boosts too cheaply — those are trimmed, so early play is about <i>enabling</i> your factory rather than instantly snowballing it. (2) <b>Automation comes early:</b> the <b>Auto-Builder is now a first-ring Engineering node</b> you can grab right away, so hands-off building is an early convenience, not a mid-game reward. (3) <b>Talents run much deeper</b> — most talents gained ~50–100% more ranks, two new talents were added (Bulk Purchasing, Nanotooling), the efficiency caps were raised so those extra ranks keep paying off, and the higher tiers unlock over a longer investment. No more maxing the whole talent board in an afternoon. (4) <b>Ascension is a real power layer now.</b> Dark Matter used to only buy automations that played the game <i>for</i> you — the decisions you actually enjoy. Now it buys <b>permanent power that carries across every era</b>: ⭐ Dark Star (global production), 🌌 Cosmic Grid (power + grid), 💠 Void Market (sales + contracts), plus the returning Genesis Cache and Paradox Engine — all repeatable, the endless sink. The automations are still there, but they're now an <b>optional</b> section you switch on only if you want to idle a loop. <b>Your tree was refunded</b> again for the layout change."],
