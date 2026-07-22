@@ -400,14 +400,33 @@ The endgame layer *above* Blueprints. Unlocks once you've earned **15 Blueprints
 - **File Patent** performs a deeper reset than Restructure: it wipes the factory, Credits,
   **all Blueprints, and the entire Advancement tree** — but keeps **Talents, Achievements,
   and Patents/patent-upgrades**. It grants `floor(sqrt(blueprintsThisCycle / 50))` Patents.
-- **Patent upgrades are permanent through *everything*** (both Restructure and File Patent),
-  which makes them the strongest bonuses in the game and the reward for the big reset:
-  Industrial Legacy (+25% production/lvl), Vast Reserves (+50% caps/lvl), Trade Empire (+25%
-  sales/lvl), Research Grants (+25% Blueprint gain/lvl), Power Doctrine (+50% generator
-  output/lvl), Automation Mandate (+25% production & storage/lvl). Costs scale `base × (level+1)`
-  ⚛, so this is the **infinite scaling sink** that backs up the punchy meta.
-- Effects sum into the same `st()` aggregator as the tree, talents, milestones. **UI:** the
-  ⚛ Patents tab (shows a locked hint until unlocked, then File Patent + upgrade cards).
+- **Patents buy PERMANENCE, not percentages.** *Redesigned v0.46.0.* Originally this was a +%
+  shop (Industrial Legacy +25% prod/lvl, Vast Reserves +50% caps/lvl, …) — and playtest killed it:
+  *"patents don't seem like they're very much needed; I've played the entire game through without
+  selecting a single one."* That was **correct play**: filing wiped your Blueprints *and* the whole
+  tree, and refunded you a worse version of what the tree already sells. The layer had **no verb of
+  its own** — the exact failure we'd already fixed once for Ascension (see §13). Patents now add
+  **nothing** to `st()`. Instead every upgrade is **grandfathered into every future run**, applied
+  in `freshRun()`:
+  - 🌳 **Prior Art** (`base 3`) — each run starts with the first *N* rings of **all six arms**
+    pre-allocated. Applied *before* the Kickstart/Genesis seeding so pre-allocated `kick` nodes
+    count on the same reset.
+  - 🔒 **Grandfathered Tooling** (`base 2`) — every machine line starts at **Mk N**.
+  - 📜 **Standing Claim** (`base 1`) — machines up to tier *N* start **already unlocked**, sparing
+    the re-earn of the build-prerequisite chain. **Deliberately AND-ed with `AGE_REQ`/`AGE_DM`** so
+    it can *never* bypass an age gate (that gate is the game's structural wall — see §"length").
+  - 🏭 **Chartered Works** (3 Warehouses/lvl) · 🏪 **Franchise Rights** (1 Terminal/lvl) ·
+    💰 **Reserve Vault** (Credits, ×4/lvl).
+  Costs still scale `base × (level+1)` ⚛ (× `patentDiscount` from the Patent Attorneys node).
+- **Why this is the right shape for a MID layer.** Restructure re-spends BP into the tree;
+  Ascension grants permanent cross-era power. Patents sit between them and now own *preservation* —
+  they make the **re-climb itself shorter**, which is precisely the pain the middle of the loop
+  creates. A mid-game spread starts a fresh run at ~**1.7× production, 3.3× storage, 18 free tree
+  nodes, Mk2 across the board** and the early chain unlocked. Note `patentUpg` is wiped by
+  **Ascend** (Ascension collapses every layer below it), so Patents are *intra-era* preservation
+  while Genesis Cache / the Ascendant Foundation cover *cross-era* — no overlap.
+- **UI:** the ⚛ Patents tab (locked hint until unlocked, then File Patent + preservation cards
+  showing each patent's live `cur(l)` status).
 
 ---
 
@@ -418,9 +437,18 @@ Age** (`ascensionUnlocked = maxAge ≥ 7`). **Ascending** (`ascend()`) is the de
 factory *and* every layer below it (Blueprints, tree, **Patents**, the **Fleet**) and **re-locks the ages**
 (`stats.bpEarned = 0`). It grants **Dark Matter** = `floor(√(bpEarned_this_era / ASCEND_SCALE(300)))`.
 
-**Distinct from Patents — by design.** Patents/tree/talents are all "+stat"; Ascension must be a *different
-kind* of layer, so Dark Matter buys **META-AUTOMATION** (`DM_AUTO`, not stat upgrades — Ascension adds
-nothing to `st()`). The automations run/reshape the LOWER loops via `metaAuto()` (called each tick):
+**What Dark Matter buys — revised v0.45.0.** Originally Dark Matter bought *only* meta-automation, on the
+theory that Ascension had to differ from the (then "+stat") Patents layer. Playtest rejected that too:
+*"ascension almost feels useless — the automation it provides is never automation wanted or needed, as the
+player would decide what talents to choose, when to reset."* **Automating the decisions a player enjoys is
+not a reward.** So `DM_AUTO` entries are now tagged `kind`, and the layer's spine is **permanent power that
+carries across every era**, folded into `st()` in `recomputeStats`: ⭐ **Dark Star** (+8% production/lvl),
+🌌 **Cosmic Grid** (+12% generator output & +6 MW/age per lvl), 💠 **Void Market** (+15% sale value &
+contract pay/lvl) — all `max:99`, the endless sink — plus **Genesis Cache** and the **Paradox Engine**.
+(The layers stay distinct because *Patents* moved to preservation in v0.46.0, see §12: tree = spendable
+build, Patents = permanence, Ascension = permanent cross-era power.) The automations remain, **demoted to an
+optional, pricier, visually-separated section** you enable only to idle a mastered loop, via `metaAuto()`
+(called each tick):
 **Blueprint Autopilot** (`autoAllocateBP` — greedily allocates the whole 300-node tree, killing the manual
 clicking), **Talent Autopilot** (`autoBuyTalents`), **Genesis Cache** (leveled head-start pre-built into
 `freshRun`), **Auto-Restructure** (fires `restructure()` when a run's `bpFor` peaks — cadence

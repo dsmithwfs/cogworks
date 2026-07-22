@@ -180,24 +180,45 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   fresh(); E.state.bpCycle = E.PATENT_SCALE * 9; // sqrt(9)=3, scale-independent
   eq("patent gain from cycle", E.patentAvailable(), 3);
 
-  fresh(); E.state.patentUpg = { legacy: 2 }; E.recomputeStats(); // +25% prod/lvl
-  near("patent upgrade feeds globalRate", E.globalRate(), 1.5);
+  // Patents are the PRESERVATION layer — they must NOT sell stat multipliers (that's the tree's job,
+  // and selling it worse is why the layer used to be skippable).
+  fresh(); E.state.patentUpg = { priorArt: 2, grandfather: 2, chartered: 2 }; E.recomputeStats();
+  near("patents add NO stat multipliers (distinct from the tree)", E.globalRate(), 1);
 
-  // patent upgrade cost scales
-  eq("patent cost legacy L0", E.patentCost(E.PATENTS.find((p) => p.id === "legacy"), 0), 1);
-  eq("patent cost grants L0", E.patentCost(E.PATENTS.find((p) => p.id === "grants"), 0), 2);
+  // patent upgrade cost scales off each patent's base
+  eq("patent cost priorArt L0", E.patentCost(E.PATENTS.find((p) => p.id === "priorArt"), 0), 3);
+  eq("patent cost chartered L0", E.patentCost(E.PATENTS.find((p) => p.id === "chartered"), 0), 1);
+
+  // ---- preservation: each patent is grandfathered into every future run (applied in freshRun) ----
+  fresh(); E.state.patentUpg = { priorArt: 2 }; E.state.allocated = { start: true }; E.freshRun(E.state);
+  ok("Prior Art pre-allocates the first N rings of all 6 arms",
+    E.state.allocated["ind_1"] && E.state.allocated["ind_2"] && E.state.allocated["asc_2"] && !E.state.allocated["ind_3"]);
+
+  fresh(); E.state.patentUpg = { grandfather: 3 }; E.freshRun(E.state);
+  ok("Grandfathered Tooling starts every machine at Mk N", E.state.mk.miner === 3 && E.state.mk.ironFurnace === 3);
+
+  fresh(); E.state.patentUpg = { chartered: 2, franchise: 3, vault: 2 }; E.freshRun(E.state);
+  ok("Chartered Works seeds Warehouses", E.state.warehouses === 6);
+  ok("Franchise Rights seeds Trade Terminals", E.state.markets === 3);
+  ok("Reserve Vault seeds Credits", E.state.credits === 2500 * 4);
+
+  // Standing Claim spares the build-prerequisite chain but must NEVER bypass an age gate
+  fresh(); E.state.patentUpg = { standing: 8 }; E.state.stats.bpEarned = 0; E.state.stats.dmEarned = 0; E.freshRun(E.state);
+  ok("Standing Claim unlocks the un-gated early tiers", !!E.state.unlocked.gearPress);
+  ok("Standing Claim does NOT bypass a Blueprint age gate",
+    E.MORDER.filter((k) => E.MACHINES[k].t >= 4).every((k) => !E.state.unlocked[k]));
 
   // File Patent effect (replicated): wipes blueprints/tree, keeps patents/talents/patentUpg
   fresh();
   E.state.blueprints = 40; E.state.allocated = { start: true, ind_1: true }; E.state.talents = { extract: 3 };
-  E.state.patents = 5; E.state.patentUpg = { legacy: 1 }; E.state.bpCycle = 200;
-  const keptPatents = E.state.patents, keptTalent = E.state.talents.extract, keptUpg = E.state.patentUpg.legacy;
+  E.state.patents = 5; E.state.patentUpg = { chartered: 1 }; E.state.bpCycle = 200;
+  const keptPatents = E.state.patents, keptTalent = E.state.talents.extract, keptUpg = E.state.patentUpg.chartered;
   // simulate the reset that doFilePatent performs
   E.state.patents += E.patentAvailable(); E.state.blueprints = 0; E.state.allocated = { start: true }; E.state.bpCycle = 0; E.freshRun(E.state);
   ok("file patent: blueprints wiped", E.state.blueprints === 0);
   ok("file patent: tree reset to core", Object.keys(E.state.allocated).length === 1);
   ok("file patent: talents kept", E.state.talents.extract === keptTalent);
-  ok("file patent: patent upgrades kept", E.state.patentUpg.legacy === keptUpg);
+  ok("file patent: patent upgrades kept", E.state.patentUpg.chartered === keptUpg);
   ok("file patent: patents grew", E.state.patents > keptPatents);
 })();
 
@@ -960,15 +981,24 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   E.state.stats.bpEarned = E.ASCEND_SCALE * 9;                      // √9 = 3
   ok("Dark Matter = floor(√(bpEarned / ASCEND_SCALE))", E.darkMatterAvailable() === 3);
 
-  // Dark Matter buys AUTOMATION (not +% stats) — activating one sets its flag, costs DM, respects max
+  // Dark Matter buys OPTIONAL AUTOMATION — activating one sets its flag, costs DM, respects max
   fresh();
-  E.state.darkMatter = 10;
+  E.state.darkMatter = 30;
   E.upgradeDM("autoRes");
-  ok("activating an automation spends Dark Matter", E.state.darkMatter === 10 - E.dmCost(E.DM_AUTO.find(x=>x.id==="autoRes"), 0));
+  ok("activating an automation spends Dark Matter", E.state.darkMatter === 30 - E.dmCost(E.DM_AUTO.find(x=>x.id==="autoRes"), 0));
   ok("automation flag is set", E.dmHas("autoRes") === true);
   const dmMid = E.state.darkMatter; E.upgradeDM("autoRes");
   ok("a maxed (max:1) automation can't be bought again", E.state.darkMatter === dmMid && (E.state.dmUpg.autoRes||0) === 1);
-  ok("Ascension does NOT add stat multipliers (distinct from Patents)", Math.abs(E.globalRate() - 1) < 1e-9);
+  ok("an automation alone adds no stat multipliers", Math.abs(E.globalRate() - 1) < 1e-9);
+
+  // ...but Dark Matter's PERMANENT POWER upgrades DO feed the stat cache (v0.45.0 — the layer's main draw)
+  fresh(); E.state.dmUpg = { darkStar: 5 }; E.recomputeStats();
+  near("Dark Star adds +8% production per level", E.globalRate(), 1.4);
+  fresh(); E.state.dmUpg = { voidMarket: 2 }; E.recomputeStats();
+  near("Void Market adds +15% sale value per level", E.marketMult(), 1.3);
+  fresh(); E.state.maxAge = 4; E.recomputeStats(); const gridNoCG = E.gridBase();
+  fresh(); E.state.maxAge = 4; E.state.dmUpg = { cosmicGrid: 3 }; E.recomputeStats();
+  ok("Cosmic Grid adds free grid per age", E.gridBase() === gridNoCG + 6 * 3 * 4);
 
   // Blueprint Autopilot allocates Blueprints into the tree automatically
   fresh();

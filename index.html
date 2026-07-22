@@ -539,7 +539,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.45.0";
+const VERSION = "0.46.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -876,17 +876,26 @@ const TP_SCALE = 100;
 const earnedTP = () => Math.floor(Math.sqrt((state.stats.produced||0)/TP_SCALE));
 function grantTP(){ const e=earnedTP(); if(e>(state.tpClaimed||0)){ state.talentPoints=(state.talentPoints||0)+(e-state.tpClaimed); state.tpClaimed=e; } }
 
-// ---- Patents: the deep (second) prestige layer -----------------------------
+// ---- Patents: the PRESERVATION layer (second prestige) ---------------------
 // Filing a Patent wipes the factory + Credits + Blueprints + the Advancement tree, granting
-// Patents (⚛) based on Blueprints earned this cycle. Patent upgrades are permanent — they
-// survive both Restructure and File Patent — and feed st() like everything else.
+// Patents (⚛) based on Blueprints earned this cycle. Patents deliberately do NOT sell +% — that
+// is the TREE's job, and selling the same thing for a worse price is exactly why this layer used
+// to be skippable (playtest: "played the entire game without selecting a single one"). Instead
+// Patents buy PERMANENCE: everything you patent is GRANDFATHERED into every future run, so each
+// re-climb rebuilds less. All of it is applied in freshRun(). Distinct verb: preservation.
 const PATENTS = [
-  {id:"legacy",   name:"Industrial Legacy",  base:1, per:{prod:.25},        desc:"+25% global production / level"},
-  {id:"reserves", name:"Vast Reserves",      base:1, per:{cap:.5},          desc:"+50% storage cap / level"},
-  {id:"empire",   name:"Trade Empire",       base:1, per:{sell:.25},        desc:"+25% sale value / level"},
-  {id:"grants",   name:"Research Grants",    base:2, per:{bp:.25},          desc:"+25% Blueprint gain / level"},
-  {id:"doctrine", name:"Power Doctrine",     base:1, per:{power:.5},        desc:"+50% generator output / level"},
-  {id:"mandate",  name:"Automation Mandate", base:3, per:{prod:.25,cap:.25},desc:"+25% production & storage / level"},
+  {id:"priorArt",   ic:"🌳", name:"Prior Art",             base:3, desc:"Every run starts with the first N rings of all six tree arms already allocated (+1 ring / level)",
+    cur:l=>`first ${l} ring${l==1?"":"s"} of all 6 arms pre-allocated`},
+  {id:"grandfather",ic:"🔒", name:"Grandfathered Tooling", base:2, desc:"Every machine line starts each run already at Mk N (+1 Mk / level)",
+    cur:l=>`all machines start at Mk ${l}`},
+  {id:"standing",   ic:"📜", name:"Standing Claim",        base:1, desc:"Machines up to tier N start each run already unlocked — no re-earning the build-prerequisite chain (never bypasses an age gate)",
+    cur:l=>`tiers 0–${l} start unlocked`},
+  {id:"chartered",  ic:"🏭", name:"Chartered Works",       base:1, desc:"Start every run with 3 Warehouses per level",
+    cur:l=>`start with ${3*l} Warehouses`},
+  {id:"franchise",  ic:"🏪", name:"Franchise Rights",      base:2, desc:"Start every run with 1 Trade Terminal per level",
+    cur:l=>`start with ${l} Trade Terminal${l==1?"":"s"}`},
+  {id:"vault",      ic:"💰", name:"Reserve Vault",         base:1, desc:"Start every run with Credits in the bank (×4 per level)",
+    cur:l=>`start with ${money(2500*Math.pow(4,l-1))}`},
 ];
 const PATENT_UNLOCK = 15;                          // total Blueprints ever earned to unlock the layer
 const PATENT_SCALE = 50;                           // Blueprints-this-cycle per √ Patent
@@ -1022,6 +1031,22 @@ function freshRun(s){
   s.prospect = 0; s.veinLeft = 0; s.depth = 0; s.veinTier = 0;   // Stone-age Prospecting: charge → vein surge, depth → tier (per-run)
   s.dysonSwarm = 0;                                 // Interstellar-age Dyson Swarm: deployed panels add grid power (per-run)
   s.forks = 0;                                      // Transcendence-age Reality Forking: parallel factory branches (per-run)
+  // ── PATENT PRESERVATION (2nd prestige layer) — everything you patented is GRANDFATHERED into this run.
+  // Patents buy permanence, not percentages; each level makes the next re-climb rebuild less. Runs BEFORE the
+  // Kickstart/Genesis seeding below so pre-allocated nodes (e.g. Kickstart) count on the very same reset.
+  const pu = s.patentUpg||{}, sbp=(s.stats&&s.stats.bpEarned)||0, sdm=(s.stats&&s.stats.dmEarned)||0;
+  const paRings = pu.priorArt||0;
+  if(paRings>0){ s.allocated=s.allocated||{}; s.allocated.start=true;
+    for(const arm of ARMS) for(let r=1; r<=Math.min(paRings, arm.rings.length); r++) s.allocated[arm.key+"_"+r]=true; }
+  const gf = pu.grandfather||0;
+  if(gf>0) for(const k in MACHINES) s.mk[k]=Math.max(s.mk[k]||0, gf);
+  const sc = pu.standing||0;
+  if(sc>0) for(const key of MORDER){ const t=MACHINES[key].t, ag=TIER_AGE[t];
+    // gated deliberately: this only spares you re-earning the build-prerequisite chain, it NEVER bypasses an age gate
+    if(t<=sc && sbp>=AGE_REQ[ag] && sdm>=(AGE_DM[ag]||0)) s.unlocked[key]=true; }
+  if(pu.chartered) s.warehouses += 3*pu.chartered;
+  if(pu.franchise) s.markets    += pu.franchise;
+  if(pu.vault)     s.credits    += 2500*Math.pow(4, pu.vault-1);
   let ks=0; for(const id in (s.allocated||{})){ const n=NODES[id]; if(n && n.eff.kick) ks+=n.eff.kick; }
   if(ks>0){ s.warehouses+=ks; s.machines.miner+=3*ks; s.machines.ironFurnace+=2*ks; s.credits+=500*ks; }
   const hs=(s.dmUpg && !(s.dmOff&&s.dmOff.headStart) && s.dmUpg.headStart)||0;   // Ascension "Genesis Cache" — pre-seed each reset for faster re-climbs (respects pause)
@@ -1082,7 +1107,7 @@ function recomputeStats(){
   for(const m of MILESTONES){ if(state.milestones[m.id]) for(const k in m.eff) s[k]=(s[k]||0)+m.eff[k]; }
   for(let a=1;a<=MAX_AGE;a++){ if(state.ageGoals[a]){ const e=AGE_GOALS[a].eff; for(const k in e) s[k]=(s[k]||0)+e[k]; } }
   for(const t of TALENTS){ const r=state.talents[t.id]||0; if(r>0) for(const k in t.per) s[k]=(s[k]||0)+t.per[k]*r; }
-  for(const p of PATENTS){ const l=state.patentUpg[p.id]||0; if(l>0) for(const k in p.per) s[k]=(s[k]||0)+p.per[k]*l; }
+  for(const p of PATENTS){ const l=state.patentUpg[p.id]||0; if(l>0 && p.per) for(const k in p.per) s[k]=(s[k]||0)+p.per[k]*l; }   // Patents are preservation (applied in freshRun), not stats — kept for any future stat-bearing patent
   const agesBeyond=Math.max(0,(state.maxAge||1)-1); if(agesBeyond>0) s.prod=(s.prod||0)+0.10*agesBeyond; // permanent per-age dividend
   // Ascension permanent-power upgrades (Dark Matter) fold in like everything else — these carry across every era.
   const dmu=state.dmUpg||{};
@@ -2150,7 +2175,7 @@ function updateUI(){
     const body=el("patentBody");
     if(!patentsUnlocked()){
       if(body.dataset.psig!=="locked"){ body.dataset.psig="locked";
-        body.innerHTML=`<p class="muted">🔒 Unlocks once you've earned <b>${PATENT_UNLOCK} 📐 Blueprints</b> in total (so far: <span id="patProg"></span>). Patents are a late-game reset granting permanent global bonuses.</p>`; }
+        body.innerHTML=`<p class="muted">🔒 Unlocks once you've earned <b>${PATENT_UNLOCK} 📐 Blueprints</b> in total (so far: <span id="patProg"></span>). Patents are a deeper reset that buys <b>permanence</b> — tree rings, Mk levels, machines and buildings that are grandfathered into every future run.</p>`; }
       setText(el("patProg"), fmt(state.stats.bpEarned||0)+" 📐");
     } else {
       const pg=patentAvailable();
@@ -2158,9 +2183,10 @@ function updateUI(){
       if(body.dataset.psig!==psig){ body.dataset.psig=psig;
         let html=`<div class="toolrow"><button class="b mk" id="filePatent" style="max-width:290px"><span id="fpMain">⚛ File Patent</span><small id="fpSub"></small></button>
           <span class="muted" style="font-size:12px">This cycle: <b class="num" id="patCycle"></b> 📐 earned. Talents, Achievements &amp; Patents are kept.</span></div>
-          <div class="grid" style="margin-top:10px">`;
+          <p class="muted" style="font-size:12px;margin:8px 0 2px">Patents don't sell bonuses — the tree does that. Patents buy <b>permanence</b>: everything below is <b>grandfathered into every future run</b>, so each re-climb rebuilds less.</p>
+          <div class="grid" style="margin-top:6px">`;
         for(const p of PATENTS){ const l=state.patentUpg[p.id]||0;
-          html+=`<div class="mc"><div class="ic">⚛</div><div><div class="name">${p.name} <span class="mk">Lv ${l}</span></div><div class="rec">${p.desc}</div><div class="st muted">${l>0?"current: "+effText(scaleEff(p.per,l)):""}</div></div>
+          html+=`<div class="mc${l>0?' done':''}"><div class="ic">${p.ic||"⚛"}</div><div><div class="name">${p.name} <span class="mk">Lv ${l}</span></div><div class="rec">${p.desc}</div><div class="st">${l>0?`<span class="pos">✓ ${p.cur?p.cur(l):""}</span>`:""}</div></div>
             <div class="btns"><button class="b mk" data-patent="${p.id}">Upgrade <small>⚛ ${patentCost(p,l)}</small></button></div></div>`;
         }
         body.innerHTML=html+`</div>`;
@@ -2309,7 +2335,8 @@ function doFilePatent(){
   openModal(`<h3>⚛ File a Patent?</h3>
     <p class="muted">A deeper reset: wipes your factory, Credits, <b>Blueprints, and the whole Advancement tree</b>. Your <b>Talents, Achievements, and Patents are kept</b>.</p>
     <ul><li>Gain <b>+${fmt(gain)} ⚛ Patents</b> (→ ${fmt((state.patents||0)+gain)})</li>
-    <li>Patent upgrades are permanent — they survive every reset.</li></ul>
+    <li>Patents buy <b>permanence, not bonuses</b> — pre-allocated tree rings, grandfathered Mk levels, machines that start unlocked, Warehouses &amp; Terminals you keep.</li>
+    <li>Everything you patent is <b>rebuilt for you at the start of every future run</b>, so each re-climb gets shorter.</li></ul>
     <div class="rw"><button data-close>Cancel</button><button class="primary" id="cfp">File Patent</button></div>`);
   el("cfp").onclick=()=>{ filePatent(gain); closeModal(); screenFlash(); SND.prestige(); toast(`Patent filed! +${fmt(gain)} ⚛`,"unlock"); };
 }
@@ -2594,6 +2621,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.46.0","<b>Patents are completely redesigned.</b> You could play the whole game without ever filing one — and you were right to: filing wiped your Blueprints <i>and</i> your entire Advancement tree, and all you got back was a shop selling '+25% production' and '+50% storage'. That's exactly what the tree already sells, but cheaper. The layer had nothing of its own. So Patents no longer sell bonuses at all. <b>Patents now buy permanence.</b> Everything you patent is <b>grandfathered into every future run</b>, so each re-climb rebuilds less: 🌳 <b>Prior Art</b> — start every run with the first N rings of all six tree arms already allocated; 🔒 <b>Grandfathered Tooling</b> — every machine line starts at Mk N; 📜 <b>Standing Claim</b> — machines up to tier N start unlocked, so you never re-earn the build-prerequisite chain again (it will never skip an age gate); 🏭 <b>Chartered Works</b> — start with Warehouses; 🏪 <b>Franchise Rights</b> — start with Trade Terminals; 💰 <b>Reserve Vault</b> — start with Credits in the bank. A mid-game spread now starts a fresh run at <b>1.7× production, 3.3× storage, 18 free tree nodes, Mk2 across the board and the early chain already unlocked</b> — so filing is something you <i>want</i> to do, and it makes every Restructure and every Ascension re-climb shorter from then on."],
   ["0.45.0","Tuning pass on progression depth from playtest notes. (1) <b>The tree earns power later.</b> The first two rings of every arm gave big boosts too cheaply — those are trimmed, so early play is about <i>enabling</i> your factory rather than instantly snowballing it. (2) <b>Automation comes early:</b> the <b>Auto-Builder is now a first-ring Engineering node</b> you can grab right away, so hands-off building is an early convenience, not a mid-game reward. (3) <b>Talents run much deeper</b> — most talents gained ~50–100% more ranks, two new talents were added (Bulk Purchasing, Nanotooling), the efficiency caps were raised so those extra ranks keep paying off, and the higher tiers unlock over a longer investment. No more maxing the whole talent board in an afternoon. (4) <b>Ascension is a real power layer now.</b> Dark Matter used to only buy automations that played the game <i>for</i> you — the decisions you actually enjoy. Now it buys <b>permanent power that carries across every era</b>: ⭐ Dark Star (global production), 🌌 Cosmic Grid (power + grid), 💠 Void Market (sales + contracts), plus the returning Genesis Cache and Paradox Engine — all repeatable, the endless sink. The automations are still there, but they're now an <b>optional</b> section you switch on only if you want to idle a loop. <b>Your tree was refunded</b> again for the layout change."],
   ["0.44.0","Two big reworks from playtest feedback. (1) The Advancement tree is <b>rebuilt from scratch</b>: gone are the ~300 repetitive '+x% this' nodes, replaced by ~76 hand-crafted ones where about half do something distinctive — synergies that scale with how you play, rule-changing mechanics, tradeoffs, and chunky stat jumps that each actually move the needle. Every arm is a focused, themed path to a keystone. <b>Your tree was refunded</b> so you can re-plan freely in the new layout. (2) <b>Ore Veins are now evergreen.</b> Prospecting used to die the moment you automated; now the charge meter fills on its own from your raw output (and faster if you mine by hand), and striking a vein surges your <b>whole factory's</b> production, not just raw ore. New: <b>Depth</b> — each strike digs deeper, and deeper veins are bigger (Surface Seam → Rich Vein → Deep Lode → 🌋 Mother Lode). Idle play sustains the small ones; active mining drives the Mother Lodes. The Engineering arm has new nodes to tune all of it. (Power also got more generous to match the leaner tree — the grid floor now grows each age, and the Power arm's generators scale much harder.)"],
   ["0.43.0","The Advancement tree finally looks like a map. Each of the six arms now has its own <b>colour</b> — a tinted sector wedge and a labelled banner at its tip (⚙️ INDUSTRY, 📦 LOGISTICS, ⚡ POWER, 💹 COMMERCE, 🔧 ENGINEERING, ✨ ASCENDANCY) with a live <b>allocated-count</b> under each, so one glance tells you where you are and how far each branch has come. Nodes speak a <b>shape language</b>: the qualitative mechanic nodes are now ◈ hexagons marked in their arm's colour, keystones are proper ★ stars with a halo ring, and available frontier nodes gently pulse. Faint <b>ring guides</b> mark every 4th ring, cross-arm links render dashed so weaves read differently from spines, and the stats summary above the canvas is now a row of <b>chips</b> — with your active mechanics called out in their own purple chip."],
