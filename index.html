@@ -374,6 +374,24 @@
         <span class="muted" style="font-size:12px" id="forkHint"></span>
       </div>
     </div>
+    <div class="panel" id="lawPanel" style="display:none">
+      <h2>⚖️ Axiomatic Law <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age IX signature. Spend Prime Laws to <b>inscribe</b> the rules your reality obeys, then choose which are <b>in force</b>. You have limited slots, so this is a build you tune — every law is a big rule with a real cost, and there is no strictly-best set.</span></h2>
+      <div class="toolrow">
+        <span class="kv" style="min-width:170px">In force <b id="lawSlotTxt" style="margin-left:6px">0/1</b></span>
+        <span class="kv" style="min-width:190px">Next inscription <b id="lawCostTxt" style="margin-left:6px">4 📜</b></span>
+        <span class="muted" style="font-size:12px" id="lawHint"></span>
+      </div>
+      <div class="grid" id="lawList" style="margin-top:8px"></div>
+    </div>
+    <div class="panel" id="monadPanel" style="display:none">
+      <h2>Ω Temporal Binding <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">— Age X signature. Bind a Monad to accelerate <b>time itself</b>. Every second of the factory runs faster: production, consumption, fuel, contracts, Talent Points. This is more time, not free output — your inputs drain faster too.</span></h2>
+      <div class="toolrow">
+        <span class="kv" style="min-width:160px">Bound <b id="boundCount" style="margin-left:6px">0</b></span>
+        <span class="kv" style="min-width:170px">Time flows <b id="timeMultTxt" style="margin-left:6px">×1.00</b></span>
+        <button class="b mk" id="bindMonad" style="max-width:170px">Bind Monad</button>
+        <span class="muted" style="font-size:12px" id="monadHint"></span>
+      </div>
+    </div>
 
     <div class="panel">
       <h2>🏭 Machines
@@ -539,7 +557,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.47.0";
+const VERSION = "0.48.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -550,10 +568,10 @@ const PRESTIGE_SCALE = 1e4;
 const TIERS = ["Extraction","Smelting & Refining","Basic Components","Advanced Components","Complex Assemblies","Robotics","Singularity Tech","Interstellar Tech","Transcendence Tech"];
 // Ages are the macro-journey: each groups a slice of the chain. Reaching a NEW age (ever) grants
 // a permanent bonus; after a Restructure you re-climb the ages fast — faster each run.
-const TIER_AGE = [1,1,2,3,4,5,6,7,8];               // which age each tier belongs to
+const TIER_AGE = [1,1,2,3,4,5,6,7,8,9,10];          // which age each tier belongs to
 // Per-copy build-cost scaling by tier. Low tiers stay spammy-cheap; high tiers scale HARD so a single
 // run walls out and can't brute-force the endgame — prestige multipliers/discounts are the way through.
-const TIER_MULT = [1.15, 1.16, 1.19, 1.23, 1.30, 1.42, 1.55, 1.60, 1.65];
+const TIER_MULT = [1.15, 1.16, 1.19, 1.23, 1.30, 1.42, 1.55, 1.60, 1.65, 1.70, 1.75];
 const ROMAN = ["","I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"];
 const AGES = [ null,
   {n:"Stone & Iron Age", ic:"⛏️", tagline:"Mine ore and smelt your first plates."},
@@ -564,6 +582,8 @@ const AGES = [ null,
   {n:"Space Age",        ic:"🛰️", tagline:"AI cores, Von Neumann probes & beyond."},
   {n:"Interstellar Age", ic:"🌌", tagline:"Scoop stars for antimatter; build a Dyson swarm."},
   {n:"Transcendence Age",ic:"🌀", tagline:"Compute matter into being; fork reality itself."},
+  {n:"Causality Age",    ic:"⚖️", tagline:"Forge axioms and rewrite the laws your factory obeys."},
+  {n:"Omega Age",        ic:"Ω",  tagline:"The factory causes itself — and bends time to its will."},
 ];
 const MAX_AGE = AGES.length - 1;                    // highest age (generalized — no more hardcoded 6)
 const ALL_AGES = Array.from({length:MAX_AGE}, (_,i)=>i+1);   // [1..MAX_AGE]
@@ -578,13 +598,18 @@ const AGE_GOALS = [ null,
   {item:"probe",     n:20,   eff:{bp:.5},    desc:"Launch 20 Von Neumann Probes"},
   {item:"dysonPanel",n:100,  eff:{prod:.5},  desc:"Assemble 100 Dyson Panels"},
   {item:"realityShard",n:50, eff:{prodPerAge:.05}, desc:"Compile 50 Reality Shards"},
+  {item:"primeLaw",  n:25,  eff:{prodPerAge:.06}, desc:"Forge 25 Prime Laws"},
+  {item:"monad",     n:10,  eff:{prod:1.0},       desc:"Forge 10 Monads"},
 ];
 // Hard age-gate: an age's machines stay LOCKED until you've earned this many 📐 Blueprints TOTAL
 // (a permanent, prestige-only metric). Ages I–III are free; IV+ require Restructuring to advance —
 // this is what makes prestige mandatory. Already-built machines are never re-locked. (index = age)
-const AGE_REQ = [0, 0, 0, 4, 15, 80, 400, 1200, 2800];   // total Blueprints earned to unlock each age (v0.42.0: Age III gated too — the early ages flew by, and an early gate teaches the Restructure loop in the first hour)
-const AGE_DM  = [0, 0, 0, 0, 0, 0, 0, 0, 30];            // LIFETIME Dark Matter earned to unlock each age — only Age VIII is DM-gated (the cross-era progression destination; Age VII stays push-reachable so Ascension isn't deadlocked)
-const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet", "🔆 Dyson Swarm", "🌀 Reality Forking"];  // per-age signature label (for the roadmap)
+const AGE_REQ = [0, 0, 0, 4, 15, 80, 400, 1200, 2800, 6000, 12000];   // total Blueprints earned to unlock each age (v0.42.0: Age III gated too — the early ages flew by, and an early gate teaches the Restructure loop in the first hour)
+// LIFETIME Dark Matter earned to unlock each age. Ages VIII–X are the cross-era destinations (VII stays
+// push-reachable so Ascension can never deadlock). Spaced against the v0.47.0 DM economy (~4/era and
+// rising as production compounds): VIII lands ~era 8, IX ~era 15, X is the long tail.
+const AGE_DM  = [0, 0, 0, 0, 0, 0, 0, 0, 30, 55, 100];
+const AGE_SIG = ["", "🪨 Prospecting", "⚡ Overclock", "🔋 Accumulators", "⚖ Auto-Balance", "🤖 Workforce", "🛰️ Von Neumann Fleet", "🔆 Dyson Swarm", "🌀 Reality Forking", "⚖️ Axiomatic Law", "Ω Temporal Binding"];  // per-age signature label (for the roadmap)
 
 // id: [name, icon, tier, storageCap, sellValue]
 const ITEMS = {
@@ -618,6 +643,14 @@ const ITEMS = {
   qubit:      {n:"Qubit",         ic:"💠", t:8, cap:60,  sell:1500},
   simMatter:  {n:"Simulated Matter",ic:"🪐",t:8, cap:40,  sell:5000},
   realityShard:{n:"Reality Shard",ic:"🔮", t:8, cap:30,  sell:12000},
+  // Age IX — Causality: you stop simulating reality and start authoring the rules it obeys.
+  axiom:       {n:"Axiom",         ic:"⚖️", t:9, cap:40,  sell:30000},
+  causalLattice:{n:"Causal Lattice",ic:"🕸️",t:9, cap:24,  sell:90000},
+  primeLaw:    {n:"Prime Law",     ic:"📜", t:9, cap:16,  sell:260000},
+  // Age X — Omega: the factory becomes self-existent and manufactures its own continuation.
+  eternity:    {n:"Eternity",      ic:"♾️", t:10, cap:12, sell:750000},
+  selfCause:   {n:"Self-Cause",    ic:"🔁", t:10, cap:8,  sell:2200000},
+  monad:       {n:"The Monad",     ic:"🔘", t:10, cap:6,  sell:6500000},
 };
 
 // Machines. build.cr = base credit cost (scales ×1.15/owned). build.bom = flat component cost per build.
@@ -663,6 +696,16 @@ const MACHINES = {
   quantumFab:       {n:"Quantum Fab",       ic:"💠", t:8, rate:1, build:{cr:3e8,bom:{dysonPanel:20,processor:60,aiCore:15}},   in:{dysonPanel:1,processor:3},  out:{qubit:1},        mkItem:"realityShard", unlock:{dysonFoundry:1}},
   matrioshka:       {n:"Matrioshka Node",   ic:"🪐", t:8, rate:1, build:{cr:1e9,bom:{qubit:30,antimatter:20,dysonPanel:40}}, in:{qubit:2,antimatter:1},      out:{simMatter:1},    mkItem:"realityShard", unlock:{quantumFab:1}},
   realityCompiler:  {n:"Reality Compiler",  ic:"🔮", t:8, rate:1, build:{cr:5e9,bom:{simMatter:15,qubit:40,aiCore:30}},       in:{simMatter:1,aiCore:1},      out:{realityShard:1}, mkItem:"realityShard", unlock:{matrioshka:1}},
+
+  // Age IX — Causality. Feeds on the Transcendence outputs, so Age VIII stays load-bearing.
+  axiomPress:       {n:"Axiom Press",       ic:"⚖️", t:9, rate:1, build:{cr:2e10,bom:{realityShard:20,qubit:60,simMatter:30}},  in:{realityShard:1,qubit:2},    out:{axiom:1},        mkItem:"primeLaw", unlock:{realityCompiler:1}},
+  causalLoom:       {n:"Causal Loom",       ic:"🕸️", t:9, rate:1, build:{cr:8e10,bom:{axiom:15,simMatter:40,realityShard:25}}, in:{axiom:2,simMatter:1},       out:{causalLattice:1},mkItem:"primeLaw", unlock:{axiomPress:1}},
+  lawForge:         {n:"Law Forge",         ic:"📜", t:9, rate:1, build:{cr:3e11,bom:{causalLattice:12,axiom:40,realityShard:40}}, in:{causalLattice:1,realityShard:2}, out:{primeLaw:1}, mkItem:"primeLaw", unlock:{causalLoom:1}},
+
+  // Age X — Omega. The chain closes on itself: the last machine consumes the law that permits it.
+  eternityEngine:   {n:"Eternity Engine",   ic:"♾️", t:10, rate:1, build:{cr:1e12,bom:{primeLaw:10,causalLattice:30,axiom:60}},  in:{primeLaw:1,causalLattice:2}, out:{eternity:1},   mkItem:"monad", unlock:{lawForge:1}},
+  selfCauseLoop:    {n:"Self-Cause Loop",   ic:"🔁", t:10, rate:1, build:{cr:5e12,bom:{eternity:8,primeLaw:20,causalLattice:40}},in:{eternity:2,axiom:4},         out:{selfCause:1},  mkItem:"monad", unlock:{eternityEngine:1}},
+  monadForge:       {n:"Monad Forge",       ic:"🔘", t:10, rate:1, build:{cr:2e13,bom:{selfCause:6,eternity:15,primeLaw:30}},    in:{selfCause:1,primeLaw:2},     out:{monad:1},      mkItem:"monad", unlock:{selfCauseLoop:1}},
 };
 const MORDER = Object.keys(MACHINES);          // already in raw->finished order
 
@@ -1000,7 +1043,7 @@ const contractsUnlocked = () => (state.markets||0) > 0 || (state.prestiges||0) >
 // Power — a cross-cutting constraint. Machines draw power (by tier, scaled by Mk);
 // generators supply it. Under-supply throttles the WHOLE factory proportionally.
 const BASE_GRID = 200;                             // free MW — covers early/mid game; power bites once you scale big
-const DRAW = [1, 1, 2, 3, 5, 8, 12, 16, 20];       // MW per machine, indexed by machine tier
+const DRAW = [1, 1, 2, 3, 5, 8, 12, 16, 20, 24, 30];   // MW per machine, indexed by machine tier
 const GENERATORS = {
   steam:  {n:"Steam Engine",   ic:"💨", power:25,  fuel:{coal:1}, build:{cr:500,    mult:1.18, bom:{ironPlate:20,gear:10}},          unlock:{gearPress:1}},
   solar:  {n:"Solar Panel",    ic:"☀️", power:20,  fuel:null,     build:{cr:8000,   mult:1.16, bom:{steel:20,circuit:15}}, unlock:{circuitFab:1}},
@@ -1035,6 +1078,8 @@ function freshRun(s){
   s.prospect = 0; s.veinLeft = 0; s.depth = 0; s.veinTier = 0;   // Stone-age Prospecting: charge → vein surge, depth → tier (per-run)
   s.dysonSwarm = 0;                                 // Interstellar-age Dyson Swarm: deployed panels add grid power (per-run)
   s.forks = 0;                                      // Transcendence-age Reality Forking: parallel factory branches (per-run)
+  // Age IX Laws (state.laws/lawOn) and Age X bindings (state.bound) are NOT reset here — like the Von Neumann
+  // Fleet they are permanent through Restructure, and only Ascension (which collapses every layer) clears them.
   // ── PATENT PRESERVATION (2nd prestige layer) — everything you patented is GRANDFATHERED into this run.
   // Patents buy permanence, not percentages; each level makes the next re-climb rebuild less. Runs BEFORE the
   // Kickstart/Genesis seeding below so pre-allocated nodes (e.g. Kickstart) count on the very same reset.
@@ -1088,6 +1133,7 @@ function defaultState(){
     auto:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
     fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
+    laws:{}, lawOn:{}, bound:0,   // Age IX Axiomatic Law (inscribed + active) and Age X Temporal Binding — permanent through Restructure
     contracts:[],          // Economy Layer 3: the premium-buyer contract board
     darkMatter:0, dmUpg:{}, dmOff:{}, ascensions:0};   // Ascension layer (4th prestige): cosmic currency + permanent upgrades (dmOff = paused automations)
   freshRun(s);
@@ -1130,13 +1176,17 @@ function recomputeStats(){
   if(dmu.darkStar)   s.prod=(s.prod||0)+0.08*dmu.darkStar;
   if(dmu.cosmicGrid){ s.power=(s.power||0)+0.12*dmu.cosmicGrid; s.gridPerAge=(s.gridPerAge||0)+6*dmu.cosmicGrid; }
   if(dmu.voidMarket){ s.sell=(s.sell||0)+0.15*dmu.voidMarket; s.contractPay=(s.contractPay||0)+0.15*dmu.voidMarket; }
+  // Age IX signature: only laws that are BOTH inscribed and switched on (within your slots) shape reality.
+  for(const l of LAWS){ if(state.laws && state.laws[l.id] && state.lawOn && state.lawOn[l.id])
+    for(const k in l.eff) s[k]=(s[k]||0)+l.eff[k]; }
   const wf=workforceBonus(); if(wf>0) s.prod=(s.prod||0)+wf;         // Robotic-age workforce (in-run)
   statCache=s;
 }
 const st = k => statCache[k]||0;
 const totalMachines    = () => { let n=0; for(const k in state.machines) n+=state.machines[k]||0; return n; };
 const unlockedItemCount= () => { let n=0; for(const id in ITEMS) if(itemUnlocked(id)) n++; return n; };
-const globalRate   = () => (1 + st("prod") + fleetBonus() + accBonus() + veinBonus()
+const globalRate   = () => Math.max(0.05,           // floor: Age-IX Law drawbacks are steep and must never zero you out
+    1 + st("prod") + fleetBonus() + accBonus() + veinBonus()
   + st("prodPerAge")*(state.maxAge||1)              // SYNERGY node: +production per age reached
   + st("prodPerMachine")*(totalMachines()/100)      // SYNERGY node: +production per 100 machines
   + st("whProd")*(state.warehouses||0))             // MECHANIC node: warehouses also boost production
@@ -1144,7 +1194,7 @@ const globalRate   = () => (1 + st("prod") + fleetBonus() + accBonus() + veinBon
 const inputEff     = () => Math.max(0.3, 1 - st("input"));
 const rawEff       = () => Math.max(0.15, 1 - st("rawcost"));  // extra reduction on tier-0 (raw) inputs
 const capMult      = () => (1 + 0.25*state.warehouses) * (1 + st("cap"));
-const marketMult   = () => 1 + st("sell") + st("sellPerItem")*unlockedItemCount();   // SYNERGY node: +sale value per unlocked item
+const marketMult   = () => Math.max(0.1, 1 + st("sell") + st("sellPerItem")*unlockedItemCount());   // SYNERGY node: +sale value per unlocked item (floored — Law of Abundance cuts sale value hard)
 // Market demand (Layer 2). DEMAND_FLOOR = worst price when a market is fully flooded; DEPTH_K scales how much you
 // can sell before it saturates (∝ storage cap — abundant goods have deep markets); REGEN = proportional recovery/s.
 const DEMAND_FLOOR = 0.3, DEMAND_DEPTH_K = 3, DEMAND_REGEN = 0.05, DEMAND_DEPTH_SEC = 30;
@@ -1218,6 +1268,36 @@ const FORK_SHARD = 2;                                 // the k-th fork costs FOR
 const forkMult   = () => 1 + (state.forks||0) * FORK_GAIN;
 const forkDraw   = () => { const f=state.forks||0; return FORK_MW * f*(f+1)/2; };   // total MW to sustain every fork
 const forkCost   = () => FORK_SHARD * ((state.forks||0)+1);                          // Reality Shards for the NEXT fork
+
+// ── Age IX signature — ⚖️ AXIOMATIC LAW ──────────────────────────────────────
+// A LOADOUT, not another "+more of a thing". Spend Prime Laws to INSCRIBE laws, then choose which ones
+// your reality actually obeys — you have limited SLOTS, so this is a build decision you re-tune, not a
+// number you grow. Every law is a big opinionated rule with a real drawback, so there is no strictly-best
+// set: it depends whether you're chasing Blueprints, sales, or raw throughput this run. Distinct verb:
+// every other signature ADDS; this one CHOOSES. Inscriptions are permanent through Restructure.
+const LAWS = [
+  {id:"abundance", ic:"🌾", name:"Law of Abundance", eff:{prod:1.5,  sell:-0.5},   desc:"+150% production, but −50% sale value"},
+  {id:"scarcity",  ic:"💎", name:"Law of Scarcity",  eff:{sell:2.0,  cap:-0.5},    desc:"+200% sale value, but −50% storage caps"},
+  {id:"momentum",  ic:"🌀", name:"Law of Momentum",  eff:{prod:1.2,  powerdraw:.6},desc:"+120% production, but +60% power demand"},
+  {id:"entropy",   ic:"🔥", name:"Law of Entropy",   eff:{noBackpressure:1, prod:.8, cap:-0.3}, desc:"Machines never backpressure and +80% production, but −30% storage caps"},
+  {id:"symmetry",  ic:"⚜️", name:"Law of Symmetry",  eff:{mkBoost:.5, prod:-0.3},  desc:"Every Mk level gives +100% instead of +50%, but −30% production"},
+  {id:"recursion", ic:"🔮", name:"Law of Recursion", eff:{bp:1.5,    prod:-0.4},   desc:"+150% Blueprints per Restructure, but −40% production"},
+];
+const LAW_BASE_COST = 4;                                     // Prime Laws for your first inscription
+const lawsInscribed = () => LAWS.filter(l => state.laws && state.laws[l.id]).length;
+const lawCost   = () => LAW_BASE_COST * (lawsInscribed() + 1);          // rising: 4, 8, 12, …
+const lawSlots  = () => Math.min(4, 1 + Math.floor(lawsInscribed() / 2));   // more inscriptions → more may be active at once
+const lawsActive= () => LAWS.filter(l => state.lawOn && state.lawOn[l.id] && state.laws && state.laws[l.id]);
+
+// ── Age X signature — Ω TEMPORAL BINDING ─────────────────────────────────────
+// The Omega verb: nothing else in the game touches the CLOCK. Binding a Monad accelerates time itself —
+// dt is scaled, so the whole factory runs faster: production, consumption, fuel burn, contract timers,
+// Talent Points, everything. That makes it categorically different from a production multiplier (your
+// inputs drain faster too — it is genuinely more time, not free output). Capped so the sim stays stable.
+const TIME_PER_MONAD = 0.2;                                  // +20% clock speed per bound Monad
+const TIME_MAX       = 3;                                    // hard cap: 3× real time
+const timeMult  = () => Math.min(TIME_MAX, 1 + TIME_PER_MONAD * (state.bound||0));
+const monadCost = () => 1 + Math.floor((state.bound||0) / 3);   // Monads for the NEXT binding (rises slowly)
 
 /* =========================================================================
    COSTS
@@ -1461,7 +1541,8 @@ let lastReal = Date.now();
 function tick(){
   const now=Date.now(); let dt=(now-lastReal)/1000; lastReal=now;
   if(dt<0)dt=0; if(dt>5)dt=5;
-  state.stats.playSec=(state.stats.playSec||0)+dt;                      // lifetime active playtime (for the completion recap)
+  state.stats.playSec=(state.stats.playSec||0)+dt;                      // lifetime active playtime — REAL seconds, never bent
+  dt = Math.min(5, dt * timeMult());   // Ω Temporal Binding (Age X signature): bound Monads accelerate the clock itself
   // Prospecting engine (evergreen): passive charge fills once raw is flowing; depth decays; strike on full charge.
   if(state.veinLeft>0) state.veinLeft=Math.max(0, state.veinLeft-dt);
   state.depth=Math.max(0,(state.depth||0)-DEPTH_DECAY*(1-Math.min(0.75,st("depthKeep")))*dt);
@@ -1903,6 +1984,8 @@ function renderSigStrip(){
   if((state.maxAge>=6)||(state.fleet>0)||((state.items.probe||0)>=1))     sigs.push({k:"fleet",ic:"🛰️",nm:"Fleet",val:fmt(state.fleet||0),bonus:"+"+Math.round(fleetBonus()*100)+"%"});
   if((state.maxAge>=7)||(state.dysonSwarm>0)||((state.items.dysonPanel||0)>=1)) sigs.push({k:"dyson",ic:"🔆",nm:"Swarm",val:fmt(state.dysonSwarm||0),bonus:fmt(dysonPower())+" MW"});
   if((state.maxAge>=8)||(state.forks>0)||((state.items.realityShard||0)>=1))    sigs.push({k:"fork",ic:"🌀",nm:"Forks",val:"×"+fmt(state.forks||0),bonus:"×"+forkMult().toFixed(2)});
+  if((state.maxAge>=9)||lawsInscribed()>0||((state.items.primeLaw||0)>=1))      sigs.push({k:"law",ic:"⚖️",nm:"Laws",val:lawsActive().length+"/"+lawSlots(),bonus:fmt(lawsInscribed())+" inscribed"});
+  if((state.maxAge>=10)||((state.bound||0)>0)||((state.items.monad||0)>=1))     sigs.push({k:"monad",ic:"Ω",nm:"Time",val:"×"+timeMult().toFixed(2),bonus:fmt(state.bound||0)+" bound"});
   const strip=el("sigStrip");
   if(!sigs.length){ strip.style.display="none"; return; }
   strip.style.display="";
@@ -2018,6 +2101,40 @@ function updateUI(){
         ? `<span class="warn">⚠ Your forks are under-powered (grid at ${Math.round(lastPower.ratio*100)}%) — expand the Dyson Swarm or collapse forks.</span>`
         : `Next fork costs <b>${fmt(cost)}</b> 🔮 (have ${fmt(have)}) · draws +${fmt(FORK_MW*((state.forks||0)+1))} MW`;
       el("forkOpen").disabled=!canFork; el("forkCollapse").disabled=(state.forks||0)<1;
+    } }
+  // Age IX — Axiomatic Law. Stable skeleton (cards only rebuilt when the inscribed/active SET changes),
+  // numbers updated in place, so clicks are never eaten mid-press (see the v0.40.3 lesson).
+  { const showLaw=(state.maxAge>=9)||lawsInscribed()>0||((state.items.primeLaw||0)>=1);
+    el("lawPanel").style.display=(showLaw&&sigOpen.law)?"":"none";
+    if(showLaw){
+      const slots=lawSlots(), act=lawsActive().length, cost=lawCost(), have=Math.floor(state.items.primeLaw||0);
+      setText(el("lawSlotTxt"), act+"/"+slots);
+      setText(el("lawCostTxt"), fmt(cost)+" 📜");
+      setHTML(el("lawHint"), lawsInscribed()>=LAWS.length ? "Every law inscribed — switch between them freely."
+        : `You have <b>${fmt(have)}</b> 📜 Prime Law${have===1?"":"s"} · every 2 inscriptions unlocks another slot (max 4)`);
+      const lsig="l|"+LAWS.map(l=>(state.laws&&state.laws[l.id]?"i":"")+(state.lawOn&&state.lawOn[l.id]?"1":"0")).join(",")+"|"+slots;
+      const box=el("lawList");
+      if(box.dataset.lsig!==lsig){ box.dataset.lsig=lsig;
+        box.innerHTML=LAWS.map(l=>{ const ins=!!(state.laws&&state.laws[l.id]), on=!!(state.lawOn&&state.lawOn[l.id]);
+          return `<div class="mc${on?' done':''}${ins&&!on?' starv':''}"><div class="ic">${l.ic}</div>
+            <div><div class="name">${l.name} ${ins?(on?'<span class="pos" style="font-size:11px">✓ in force</span>':'<span class="muted" style="font-size:11px">inscribed</span>'):''}</div>
+            <div class="rec">${l.desc}</div></div>
+            <div class="btns">${ins?`<button class="b" data-lawtoggle="${l.id}" style="max-width:120px">${on?'Suspend':'Enact'}</button>`
+              :`<button class="b mk" data-lawinscribe="${l.id}">Inscribe <small>📜 ${fmt(cost)}</small></button>`}</div></div>`;
+        }).join("");
+      }
+      for(const l of LAWS){ const b=box.querySelector(`[data-lawinscribe="${l.id}"]`);
+        if(b){ const can=have>=cost; b.disabled=!can; b.classList.toggle("can",can); } }
+    } }
+  // Age X — Temporal Binding
+  { const showM=(state.maxAge>=10)||((state.bound||0)>0)||((state.items.monad||0)>=1);
+    el("monadPanel").style.display=(showM&&sigOpen.monad)?"":"none";
+    if(showM){ const cost=monadCost(), have=Math.floor(state.items.monad||0), maxed=timeMult()>=TIME_MAX;
+      setText(el("boundCount"), fmt(state.bound||0));
+      setText(el("timeMultTxt"), "×"+timeMult().toFixed(2));
+      setHTML(el("monadHint"), maxed ? `Time is bound to its ${TIME_MAX}× limit.`
+        : `Next binding costs <b>${fmt(cost)}</b> 🔘 (have ${fmt(have)}) · +${Math.round(TIME_PER_MONAD*100)}% clock speed`);
+      el("bindMonad").disabled = maxed || have<cost;
     } }
 
   renderFactoryHealth(); renderSigStrip();
@@ -2338,6 +2455,30 @@ function openFork(){ const c=forkCost(); if((state.items.realityShard||0) < c) r
   toast(`🌀 Reality forked — ${state.forks} parallel ${state.forks===1?'timeline':'timelines'} (×${forkMult().toFixed(2)} production, +${fmt(forkDraw())} MW draw)`, "unlock"); SND.goal(); updateUI(); }
 function collapseForks(n){ n=Math.min(n, state.forks||0); if(n<=0)return;               // emergency valve: close branches to free grid power (no shard refund)
   state.forks-=n; recomputeStats(); toast(`Collapsed ${n} fork${n===1?'':'s'} — grid draw reduced`, ""); updateUI(); }
+// ── Age IX — inscribe a Law (permanent) and toggle which laws are active (within your slots) ──
+function inscribeLaw(id){
+  const l=LAWS.find(x=>x.id===id); if(!l || (state.laws&&state.laws[id])) return;
+  const c=lawCost(); if((state.items.primeLaw||0) < c) return;
+  state.items.primeLaw -= c;
+  state.laws=state.laws||{}; state.laws[id]=true;
+  state.lawOn=state.lawOn||{};
+  if(lawsActive().length < lawSlots()) state.lawOn[id]=true;   // auto-enable if you have a free slot
+  recomputeStats(); toast(`⚖️ Inscribed ${l.name} — ${lawsActive().length}/${lawSlots()} laws in force`, "unlock"); SND.goal(); updateUI();
+}
+function toggleLaw(id){
+  if(!(state.laws&&state.laws[id])) return;
+  state.lawOn=state.lawOn||{};
+  if(state.lawOn[id]) state.lawOn[id]=false;
+  else { if(lawsActive().length >= lawSlots()){ toast(`All ${lawSlots()} law slots are full — switch one off first`, "warn"); return; } state.lawOn[id]=true; }
+  recomputeStats(); updateUI(); SND.build();
+}
+// ── Age X — bind a Monad, accelerating time itself ──
+function bindMonad(){
+  const c=monadCost(); if((state.items.monad||0) < c) return;
+  if(timeMult() >= TIME_MAX){ toast(`Time is already bound to its ${TIME_MAX}× limit`, "warn"); return; }
+  state.items.monad -= c; state.bound=(state.bound||0)+1; recomputeStats();
+  toast(`Ω Monad bound — time now runs at ×${timeMult().toFixed(2)}`, "unlock"); SND.goal(); updateUI();
+}
 function restructure(gain){   // core Restructure (silent — callers add juice; also used by Auto-Restructure)
   state.blueprints+=gain; state.stats.bpEarned+=gain; state.bpCycle=(state.bpCycle||0)+gain; state.prestiges++; state.lastBpGain=gain;
   freshRun(state); recomputeStats();
@@ -2386,6 +2527,7 @@ function ascend(gain){   // core Ascension (silent; also used by Auto-Ascend)
   state.blueprints=0; state.allocated={start:true}; state.bpCycle=0;   // Blueprints + tree
   state.patents=0; state.patentUpg={};                                 // Patents
   state.fleet=0; state.launched=0;                                     // Fleet
+  state.laws={}; state.lawOn={}; state.bound=0;                        // Age IX Laws + Age X bindings collapse with everything else
   state.stats.bpEarned=0;                                              // re-lock the ages
   freshRun(state); for(const k in rate)rate[k]=0; for(const k in prodRate)prodRate[k]=0; for(const k in potRate)potRate[k]=0; for(const k in demandSat)demandSat[k]=0;
   recomputeStats(); resetStructureDOM(); save(); updateUI(); renderTree();
@@ -2467,6 +2609,7 @@ function migrate(s){
   out.patents = s.patents||0;
   out.patentUpg = Object.assign({}, s.patentUpg||{});
   out.darkMatter = s.darkMatter||0; out.dmUpg = Object.assign({}, s.dmUpg||{}); out.dmOff = Object.assign({}, s.dmOff||{}); out.ascensions = s.ascensions||0;   // Ascension layer
+  out.laws = Object.assign({}, s.laws||{}); out.lawOn = Object.assign({}, s.lawOn||{}); out.bound = s.bound||0;   // Age IX Laws + Age X Temporal Binding
   out.bpCycle = s.bpCycle||0;
   out.maxAge = s.maxAge||1; out.age = 1; out.deployed = s.deployed||0;
   out.fleet = s.fleet||0; out.launched = s.launched||0;   // Von Neumann Fleet is permanent
@@ -2643,6 +2786,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.48.0","<b>Two new ages — the game goes past Transcendence.</b> ⚖️ <b>Age IX, the Causality Age</b>: you stop simulating reality and start authoring it — Axiom Press → Causal Loom → Law Forge, turning Reality Shards into <b>Prime Laws</b>. Ω <b>Age X, the Omega Age</b>: the factory becomes self-existent — Eternity Engine → Self-Cause Loop → Monad Forge. Six new machines, six new materials, and both ages feed on the Age VIII outputs so nothing you already built goes idle. Each age gets its own signature, and neither is just 'more of a number': <b>⚖️ Axiomatic Law</b> — spend Prime Laws to <b>inscribe</b> the rules your reality obeys (Abundance, Scarcity, Momentum, Entropy, Symmetry, Recursion), then choose which are <b>in force</b>. You only get a few slots, and every law is a big rule with a real drawback — +150% production but half sale value, +200% sales but half storage, and so on. There's no best set; it's a build you re-tune for what you're chasing. <b>Ω Temporal Binding</b> — bind Monads to accelerate <b>time itself</b>, up to 3×. Everything runs faster: production, consumption, fuel, contracts, Talent Points. It's genuinely more time, not free output — your inputs drain faster too. Both are permanent through Restructure and collapse only when you Ascend. Mastering Age X is now the summit that fires the completion celebration."],
   ["0.47.0","A balance pass driven by the full-game simulator — and it turned up a real bug. <b>Fixed: every era used to start in a brown-out.</b> Ascending seeded you a big head-start factory but <b>no generators</b> — and since generators cost materials (not Credits) and a reset empties your stores, you'd sit on millions of Credits at ~20% power waiting for a throttled factory to make 20 iron plates. The head-start now comes with <b>enough solar to actually run what it gives you</b>. <b>Rebalanced: Dark Matter was 10–20× out of reach.</b> A ~12h era paid only 2–3 🌑 while a handful of upgrade levels cost 45–150, so the whole Ascension layer was unaffordable and your power never compounded between eras — the sim showed production sitting flat at ~8× across <i>eleven</i> eras. Ascending now pays <b>about double</b>, and the permanent-power upgrades are cheaper (Dark Star, Cosmic Grid, Void Market, Paradox Engine). In the sim this turns a flat line into a real staircase: production now climbs <b>3× → 17×</b> across eras, Age VIII's Dark Matter gate is reachable around <b>era 8</b> instead of never, and you finally push into Age VII. Era length is unchanged — this buys <b>progression</b>, not a speed-up."],
   ["0.46.1","Fixed: after filing a Patent, the Items panel showed only the 3 starting items even though your machines were unlocked. If you owned <b>Standing Claim</b>, its pre-unlocked machines were skipped by the routine that reveals items — so the whole materials list stayed hidden. Every path that unlocks a machine now reveals the items it uses and makes, and there's a test guarding it."],
   ["0.46.0","<b>Patents are completely redesigned.</b> You could play the whole game without ever filing one — and you were right to: filing wiped your Blueprints <i>and</i> your entire Advancement tree, and all you got back was a shop selling '+25% production' and '+50% storage'. That's exactly what the tree already sells, but cheaper. The layer had nothing of its own. So Patents no longer sell bonuses at all. <b>Patents now buy permanence.</b> Everything you patent is <b>grandfathered into every future run</b>, so each re-climb rebuilds less: 🌳 <b>Prior Art</b> — start every run with the first N rings of all six tree arms already allocated; 🔒 <b>Grandfathered Tooling</b> — every machine line starts at Mk N; 📜 <b>Standing Claim</b> — machines up to tier N start unlocked, so you never re-earn the build-prerequisite chain again (it will never skip an age gate); 🏭 <b>Chartered Works</b> — start with Warehouses; 🏪 <b>Franchise Rights</b> — start with Trade Terminals; 💰 <b>Reserve Vault</b> — start with Credits in the bank. A mid-game spread now starts a fresh run at <b>1.7× production, 3.3× storage, 18 free tree nodes, Mk2 across the board and the early chain already unlocked</b> — so filing is something you <i>want</i> to do, and it makes every Restructure and every Ascension re-climb shorter from then on."],
@@ -2801,6 +2945,13 @@ function wire(){
   el("dysonMax").addEventListener("click",()=>deployDyson(Math.floor(state.items.dysonPanel||0)));
   el("forkOpen").addEventListener("click",openFork);
   el("forkCollapse").addEventListener("click",()=>collapseForks(state.forks||0));
+  el("bindMonad").addEventListener("click",bindMonad);
+  // Law cards are rebuilt when the set changes, so delegate via press() (pointerdown) — see the v0.40.3 lesson
+  // about per-frame DOM churn eating clicks.
+  press(el("lawList"), e=>{
+    const ins=e.target.closest("[data-lawinscribe]"); if(ins){ inscribeLaw(ins.dataset.lawinscribe); return; }
+    const tog=e.target.closest("[data-lawtoggle]");   if(tog){ toggleLaw(tog.dataset.lawtoggle); }
+  });
   el("buildAcc").addEventListener("click",buildAccumulator);
   el("talents").addEventListener("click",e=>{ const b=e.target.closest("[data-talent]"); if(b) upgradeTalent(b.dataset.talent); });
   press(el("patentBody"),e=>{ if(e.target.closest("#filePatent")) doFilePatent(); const u=e.target.closest("[data-patent]"); if(u) upgradePatent(u.dataset.patent); });

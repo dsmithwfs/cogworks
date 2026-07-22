@@ -615,6 +615,32 @@ the Factory tab, with an **age banner** up top.
 | VI · Space | Singularity Tech | **Von Neumann Fleet** — launch Probes → a self-replicating idle engine (+ infinite Patents) |
 | VII · Interstellar | Interstellar Tech | Star Scoop → Hydrogen → **Antimatter** → **Dyson Panels**; signature **Dyson Swarm** — deploy panels → permanent free grid power (× generator tech) |
 | VIII · Transcendence | Transcendence Tech | Quantum Fab → Matrioshka → Reality Compiler; signature **Reality Forking** — spend Reality Shards to fork the whole factory into parallel timelines (× all output), each fork power-hungry (fed by the Dyson Swarm) |
+| IX · Causality | Causality Tech | Axiom Press → Causal Loom → Law Forge (Axiom → Causal Lattice → **Prime Law**); signature **Axiomatic Law** — spend Prime Laws to *inscribe* rules, then choose which are *in force* within limited slots |
+| X · Omega | Omega Tech | Eternity Engine → Self-Cause Loop → Monad Forge (Eternity → Self-Cause → **The Monad**); signature **Temporal Binding** — bind Monads to accelerate *time itself* (capped 3×) |
+
+**Ages IX–X (v0.48.0).** Both chains consume Age VIII's outputs (Reality Shards, Qubits, Simulated Matter),
+so the Transcendence tier stays load-bearing rather than becoming a stepping stone you abandon. Both are
+**DM-gated** (`AGE_DM` IX=55, X=100) — they're cross-era destinations reached over many Ascensions, sized
+against the v0.47.0 DM economy (~4/era and rising as production compounds). Mastering **Age X** is now the
+summit that latches `completedAt` — `checkAgeGoals` keys off `MAX_AGE`, so that moved automatically.
+
+**The two new signature verbs** (the rule from §"signatures": every signature needs a verb nothing else has):
+- **⚖️ Axiomatic Law — *choose*, don't accumulate.** Every other signature ADDS (surge, bank, deploy, spend
+  → multiply). This one is a **loadout**: `LAWS` are inscribed permanently with Prime Laws, but only
+  `lawSlots()` (1→4, one more per 2 inscriptions) may be *in force* at once. Each law is a big rule with a
+  real drawback (Abundance +150% prod/−50% sell; Scarcity +200% sell/−50% cap; Momentum +120% prod/+60%
+  draw; Entropy no-backpressure +80% prod/−30% cap; Symmetry Mk×2/−30% prod; Recursion +150% BP/−40% prod),
+  so there is **no strictly-best set** — it's a build you re-tune per run. Effects fold into `st()` only when
+  both inscribed AND enacted. `globalRate` and `marketMult` gained **floors** so stacked drawbacks can never
+  zero you out.
+- **Ω Temporal Binding — bend the clock.** Nothing else in the game touches time. Bound Monads scale `dt`
+  in `tick()` (`timeMult()`, capped `TIME_MAX = 3`), so the whole factory runs faster — production *and*
+  consumption, fuel burn, contract timers, Talent Points. That makes it categorically different from a
+  production multiplier: inputs drain faster too, so it is genuinely *more time*, not free output.
+  `stats.playSec` deliberately stays on **real** seconds.
+
+Both are **permanent through Restructure** (like the Von Neumann Fleet) and collapse only on **Ascend**,
+which already wipes every layer below it.
 
 *(v0.33.0: the age system is generalized — `MAX_AGE`/`ALL_AGES` derive from the `AGES` array, so adding
 an age is now pure data: extend `TIERS`/`TIER_AGE`/`TIER_MULT`/`DRAW`/`AGES`/`ROMAN`/`AGE_GOALS`/`AGE_REQ`

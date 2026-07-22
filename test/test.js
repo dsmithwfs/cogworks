@@ -16,8 +16,8 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 (() => {
   const s = fresh();
   eq("version present", typeof E.VERSION, "string");
-  eq("producer machine count", E.MORDER.length, 32);
-  eq("item count", Object.keys(E.ITEMS).length, 30);
+  eq("producer machine count", E.MORDER.length, 38);
+  eq("item count", Object.keys(E.ITEMS).length, 36);
   ok("alloy branch exists", !!E.ITEMS.alloy && !!E.MACHINES.alloyFurnace);
   ok("concrete branch exists", !!E.ITEMS.concrete && !!E.MACHINES.cementKiln);
   ok("foundry interconnects alloy->steel", E.MACHINES.foundry && E.MACHINES.foundry.in.alloy && E.MACHINES.foundry.out.steel);
@@ -232,6 +232,66 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("file patent: patents grew", E.state.patents > keptPatents);
 })();
 
+// ---------------------------------------------------------------- Age IX: Axiomatic Law (loadout signature)
+(() => {
+  fresh();
+  ok("laws start uninscribed", E.lawsInscribed() === 0 && E.lawsActive().length === 0);
+
+  E.state.items.primeLaw = 500;
+  const before = E.globalRate(), cost0 = E.lawCost();
+  E.inscribeLaw("abundance");
+  eq("inscribing spends Prime Laws", E.state.items.primeLaw, 500 - cost0);
+  ok("inscribed law auto-enacts into a free slot", E.lawsInscribed() === 1 && E.lawsActive().length === 1);
+  near("Law of Abundance grants +150% production", E.globalRate(), before + 1.5);
+  near("...and its drawback cuts sale value by half", E.marketMult(), 0.5);
+
+  E.toggleLaw("abundance");
+  ok("suspending a law removes its effect", E.lawsActive().length === 0 && Math.abs(E.globalRate() - before) < 1e-9);
+
+  // slots are the whole point of the verb: you may inscribe everything but not enact everything
+  fresh(); E.state.items.primeLaw = 1e6;
+  for (const l of E.LAWS) E.inscribeLaw(l.id);
+  eq("every law can be inscribed", E.lawsInscribed(), E.LAWS.length);
+  ok("active laws never exceed the slot cap", E.lawsActive().length <= E.lawSlots());
+  ok("slot cap is bounded", E.lawSlots() <= 4);
+  const overfull = E.LAWS.find(l => !(E.state.lawOn && E.state.lawOn[l.id]));
+  if (overfull) { const n = E.lawsActive().length; E.toggleLaw(overfull.id);
+    eq("enacting past a full slot bar is refused", E.lawsActive().length, n); }
+
+  ok("law inscription cost rises", E.lawCost() > E.LAW_BASE_COST);
+  // production can never be zeroed out by stacked drawbacks
+  fresh(); E.state.laws = {}; E.state.lawOn = {};
+  for (const l of E.LAWS) { E.state.laws[l.id] = true; E.state.lawOn[l.id] = true; }
+  E.recomputeStats();
+  ok("globalRate is floored even with every drawback stacked", E.globalRate() > 0);
+  ok("marketMult is floored too", E.marketMult() > 0);
+})();
+
+// ---------------------------------------------------------------- Age X: Temporal Binding
+(() => {
+  fresh();
+  near("time runs at 1× with nothing bound", E.timeMult(), 1);
+  E.state.items.monad = 500;
+  const c0 = E.monadCost();
+  E.bindMonad();
+  eq("binding spends Monads", E.state.items.monad, 500 - c0);
+  near("each bound Monad speeds the clock", E.timeMult(), 1 + E.TIME_PER_MONAD);
+  for (let i = 0; i < 40; i++) E.bindMonad();
+  near("time acceleration is hard-capped", E.timeMult(), E.TIME_MAX);
+  ok("binding stops consuming Monads at the cap", E.state.items.monad > 0);
+})();
+
+// ---------------------------------------------------------------- Age signatures survive/reset correctly
+(() => {
+  // Laws + bindings are permanent through Restructure (like the Fleet) but collapse on Ascend.
+  fresh(); E.state.items.primeLaw = 500; E.inscribeLaw("abundance");
+  E.state.items.monad = 50; E.bindMonad();
+  const lawsBefore = E.lawsInscribed(), boundBefore = E.state.bound;
+  E.freshRun(E.state);
+  ok("Laws survive a Restructure", E.lawsInscribed() === lawsBefore && lawsBefore > 0);
+  ok("Temporal Binding survives a Restructure", E.state.bound === boundBefore && boundBefore > 0);
+})();
+
 // ---------------------------------------------------------------- ages
 (() => {
   fresh();
@@ -240,7 +300,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   eq("gear press -> Age II", E.currentAge(), 2);
   E.state.machines.aiFoundry = 1;                        // tier 6 -> Age VI
   eq("AI foundry -> Age VI", E.currentAge(), 6);
-  eq("8 ages defined", E.AGES.filter(Boolean).length, 8);
+  eq("10 ages defined", E.AGES.filter(Boolean).length, 10);
 
   // permanent per-age dividend feeds production via maxAge
   fresh(); E.state.maxAge = 4; E.recomputeStats();
@@ -369,7 +429,7 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
 // ---------------------------------------------------------------- age goals
 (() => {
-  eq("8 age goals defined", E.AGE_GOALS.filter(Boolean).length, 8);
+  eq("10 age goals defined", E.AGE_GOALS.filter(Boolean).length, 10);
 
   // completing a goal (cumulative production of its key item) latches it + grants its reward
   fresh();
@@ -1069,9 +1129,10 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
 
   // Completion: mastering the FINAL age latches completedAt exactly once
   fresh();
-  E.state.stats.made = { realityShard: E.AGE_GOALS[8].n };
+  const finalAge = E.AGE_GOALS.length - 1, finalGoal = E.AGE_GOALS[finalAge];   // derived so new ages can't stale this
+  E.state.stats.made = { [finalGoal.item]: finalGoal.n };
   E.checkAgeGoals();
-  ok("mastering the final age fires completion", !!E.state.ageGoals[8] && E.state.completedAt > 0);
+  ok("mastering the final age fires completion", !!E.state.ageGoals[finalAge] && E.state.completedAt > 0);
   { const t1 = E.state.completedAt; E.checkAgeGoals();
     ok("completion only fires once", E.state.completedAt === t1); }
 

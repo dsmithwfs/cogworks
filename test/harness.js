@@ -48,6 +48,9 @@ const EXPORTS = [
   "WORKFORCE_MW", "workforceDraw",
   "DYSON_MW", "dysonPower", "deployDyson",
   "FORK_GAIN", "FORK_MW", "FORK_SHARD", "forkMult", "forkDraw", "forkCost", "openFork", "collapseForks",
+  // Age IX Axiomatic Law + Age X Temporal Binding
+  "LAWS", "LAW_BASE_COST", "lawsInscribed", "lawCost", "lawSlots", "lawsActive", "inscribeLaw", "toggleLaw",
+  "TIME_PER_MONAD", "TIME_MAX", "timeMult", "monadCost", "bindMonad",
   "VEIN_TIERS", "veinTierAt", "veinBonus", "strikeVein", "prospectFillPerSec", "PROSPECT_CLICK", "DEPTH_MAX", "DEPTH_PER_STRIKE", "mine",
   "OC_SPEED", "OC_INPUT", "overclockOn", "ocSpeed", "ocInput",
   "FLEET_CAP_MULT", "FLEET_REPLICATE", "FLEET_MULT", "fleetCap", "fleetBonus", "launchProbes",

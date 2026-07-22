@@ -135,7 +135,10 @@ const powerLvls = () => ["darkStar", "cosmicGrid", "voidMarket"].reduce((a, id) 
 // Run one ERA: Restructure-loop until we've earned enough BP to have reached Age VIII (AGE_REQ[8]).
 // Returns { sec, loops, reachedAge }. Caps to avoid runaway.
 function runEra(maxSec) {
-  const AGE8 = E.AGE_REQ[E.AGE_REQ.length - 1];
+  // An era's productive ceiling is Age VIII's Blueprint gate, NOT the last age's. Ages IX–X are DM-gated
+  // destinations reached across many eras, so targeting AGE_REQ[last] (12000) would just run every era into
+  // the time cap and tell us nothing.
+  const AGE8 = E.AGE_REQ[8];
   let sec = 0, loops = 0, pats = 0;
   E.state.stats.bpEarned = 0; // era starts with ages re-locked
   E.state.blueprints = 0; E.state.allocated = { start: true }; E.state.bpCycle = 0;
@@ -169,7 +172,7 @@ function pushRun(maxSec) {
 }
 
 console.log("=== FULL-GAME PACING: game-time to reach Age VIII, across Ascension eras ===");
-console.log(`AGE_REQ = [${E.AGE_REQ.join(", ")}]  · AGE_DM(VIII) = ${E.AGE_DM[E.AGE_DM.length - 1]}  · ASCEND_SCALE = ${E.ASCEND_SCALE}`);
+console.log(`AGE_REQ = [${E.AGE_REQ.join(", ")}]  · AGE_DM = VIII:${E.AGE_DM[8]} IX:${E.AGE_DM[9]||"-"} X:${E.AGE_DM[10]||"-"}  · ASCEND_SCALE = ${E.ASCEND_SCALE}`);
 console.log("era | era time | loops | pats | prod× | maxAge | DM(era) | dmEarned | DMpow | autos");
 E.state = E.defaultState(); E.recomputeStats();
 let cumSec = 0, cumDM = 0, eraToFull = null;
