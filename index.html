@@ -167,6 +167,8 @@
   .mc .tbar{position:absolute;left:0;right:0;bottom:0;height:3px;background:transparent;overflow:hidden}   /* slim bottom-edge state bar — out of the layout flow */
   .mc .tbar>div{height:100%;width:0;transition:width .2s,background .2s}
   .mc .btns{grid-column:1/-1;display:flex;gap:7px;margin-top:6px}         /* full-width button row (was dropped in v0.40.0) */
+  .mc .offrow{display:flex;gap:4px;flex:0 0 auto}                          /* ⏸/▶ idle controls (v0.49.0) */
+  .mc .offrow .b{max-width:38px;padding:5px 0;font-size:12px}
   /* Factory health bar */
   .fhealth{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:9px 13px;margin-bottom:11px}
   .fhealth .cell .lbl{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
@@ -557,7 +559,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.48.0";
+const VERSION = "0.49.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -1064,6 +1066,7 @@ function freshRun(s){
   s.credits = 0;
   s.items = {}; for(const k in ITEMS) s.items[k]=0;
   s.machines = {}; for(const k in MACHINES) s.machines[k]=0;
+  s.off = {};                                       // idled-machine counts reset with the factory
   s.mk = {}; for(const k in MACHINES) s.mk[k]=0;
   s.warehouses = 0;
   s.markets = 0; s.marketMk = 0; s.marketItem = "ironOre";
@@ -1130,7 +1133,7 @@ function defaultState(){
   const s = {version:VERSION, lastSaved:Date.now(), blueprints:0, lifetimeCredits:0, prestiges:0,
     allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}, dmEarned:0, playSec:0},
     completedAt:0, notation:"compact", treeVersion:TREE_VERSION,
-    auto:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
+    auto:{}, off:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
     fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
     laws:{}, lawOn:{}, bound:0,   // Age IX Axiomatic Law (inscribed + active) and Age X Temporal Binding — permanent through Restructure
@@ -1184,6 +1187,11 @@ function recomputeStats(){
 }
 const st = k => statCache[k]||0;
 const totalMachines    = () => { let n=0; for(const k in state.machines) n+=state.machines[k]||0; return n; };
+// IDLED MACHINES (v0.49.0). state.off[key] = how many of a line are switched OFF. Idle machines don't run,
+// don't consume inputs, and — critically — draw NO grid power, so idling an over-producing line frees power
+// and shared inputs for the lines that are starving. Everything that "runs" a machine reads activeOf().
+const activeOf  = key => Math.max(0, (state.machines[key]||0) - (state.off&&state.off[key]||0));
+const idleOf    = key => Math.min(state.machines[key]||0, (state.off&&state.off[key]||0));
 const unlockedItemCount= () => { let n=0; for(const id in ITEMS) if(itemUnlocked(id)) n++; return n; };
 const globalRate   = () => Math.max(0.05,           // floor: Age-IX Law drawbacks are steep and must never zero you out
     1 + st("prod") + fleetBonus() + accBonus() + veinBonus()
@@ -1394,7 +1402,7 @@ function computePower(dt){
     + (state.generators.fusion||0) * GENERATORS.fusion.power * gm
     + dysonPower();                                   // Dyson Swarm feeds the grid (Age VII signature)
   let demand = 0;
-  for(const key of MORDER){ const c=state.machines[key]||0; if(c>0) demand += DRAW[MACHINES[key].t]*c*mkMult(key); }
+  for(const key of MORDER){ const c=activeOf(key); if(c>0) demand += DRAW[MACHINES[key].t]*c*mkMult(key); }   // idled machines draw nothing
   demand *= demandMult();
   demand += workforceDraw();                          // deployed robots draw grid power (Age V workforce upkeep)
   demand += forkDraw();                               // parallel realities are power-hungry (Age VIII Reality Forking upkeep)
@@ -1433,7 +1441,7 @@ function simulate(dt, eff){
   var m;
   for(const key of MORDER){
     if(!state.unlocked[key]) continue;
-    m = MACHINES[key]; const count = state.machines[key]||0;
+    m = MACHINES[key]; const count = activeOf(key);   // idled machines don't run at all
     if(count<=0) continue;
     let cyc = count * m.rate * gr * mkMult(key) * (m.smelt ? smeltMult() : 1) * ocSpeed() * ((m.t===0 && rawFree) ? 1 : pr) * dt;
     for(const r in m.in){ cyc=Math.min(cyc, (state.items[r]||0)/inF(r)); }
@@ -1482,11 +1490,32 @@ function autoBuild(){
       for(const g of GORDER){ if(!genUnlocked(g)) continue; const p=planGenerator(g,1); if(p.n<=0) continue; const bom=scaleBOM(GENERATORS[g].build.bom,p.n); if(!canAfford(p.cost,bom)) continue;
         const sc=GENERATORS[g].power*(GENERATORS[g].fuel?1:10); if(sc>bs){ bs=sc; bg=g; bpp=p; bbom=bom; } }
       if(!bg) break; pay(bpp.cost,bbom); state.generators[bg]+=bpp.n; changed=true; } }
+    // 1b. THROTTLE (v0.49.0): building alone can only fix under-production. A line whose output is backed up
+    //     is burning grid power and eating shared inputs that a starving line downstream needs — so idle some
+    //     of it, and bring it back when its buffer drains. This is what lets Auto-Balance correct BOTH
+    //     directions instead of only ever adding more machines.
+    for(const k of MORDER){
+      if(!state.unlocked[k]) continue;
+      const owned=state.machines[k]||0; if(owned<=0) continue;
+      const outId=Object.keys(MACHINES[k].out)[0];
+      const fill=(state.items[outId]||0)/capOf(outId);
+      const off=idleOf(k);
+      // Runs every 300ms, so steps are small (5%) and the thresholds are far apart (0.97 vs 0.60) — that gap
+      // is the hysteresis band that stops a line flapping on and off around a single trip point.
+      if(fill>0.97 && activeOf(k)>1){                                  // backed up → idle ~5% (never the last one)
+        const n=Math.max(1, Math.round(activeOf(k)*0.05));
+        state.off=state.off||{}; state.off[k]=Math.min(owned-1, off+n); changed=true;
+      } else if(fill<0.60 && off>0){                                   // draining again → bring capacity back
+        const n=Math.max(1, Math.round(owned*0.05));
+        state.off[k]=Math.max(0, off-n); changed=true;
+      }
+    }
     // 2. Machines: build whichever UNLOCKED producer's output buffer is emptiest (most-starved downstream).
     //    Self-limiting: a product nothing consumes stays full, so it's never picked → dead branches aren't over-built.
     for(let i=0;i<40;i++){
       let best=null,bestFill=Infinity,bestP=null,bestBom=null;
       for(const k of MORDER){ if(!state.unlocked[k]) continue;
+        if(idleOf(k)>0) continue;   // never BUY capacity for a line that already has idled machines — resume those first (step 1b)
         const p=planMachine(k,1); if(p.n<=0) continue; const bom=scaleBOM(buildBOM(k),p.n); if(!canAfford(p.cost,bom)) continue;
         const out=Object.keys(MACHINES[k].out)[0]; const fill=(state.items[out]||0)/capOf(out);
         if(fill<bestFill){ bestFill=fill; best=k; bestP=p; bestBom=bom; } }
@@ -1680,6 +1709,10 @@ function ensureMachines(){
           <button class="b" id="buy-${k}" data-buy="${k}"></button>
           <button class="b mk" id="mkbuy-${k}" data-mk="${k}"></button>
           <button class="b autob" id="autob-${k}" data-auto="${k}" style="display:none">Auto</button>
+          <div class="offrow" id="offrow-${k}" style="display:none">
+            <button class="b" data-offdn="${k}" title="Switch machines OFF (idle) — they stop producing and stop drawing power">⏸</button>
+            <button class="b" data-offup="${k}" title="Switch idled machines back ON">▶</button>
+          </div>
         </div>
       </div>`;
     }
@@ -2179,8 +2212,12 @@ function updateUI(){
   let probCount=0;   // machines currently starved or backed up — badges the ⚠ Problems filter
   for(const k of MORDER){
     if(!state.unlocked[k]) continue;
-    const m=MACHINES[k], count=state.machines[k]||0;
-    setText(el("cnt-"+k), "×"+fmt(count));
+    const m=MACHINES[k], owned=state.machines[k]||0, idled=idleOf(k), count=activeOf(k);
+    setText(el("cnt-"+k), idled>0 ? `×${fmt(count)}/${fmt(owned)}` : "×"+fmt(owned));
+    { const orow=el("offrow-"+k); if(orow) orow.style.display = owned>0 ? "" : "none";
+      const dn=orow&&orow.querySelector("[data-offdn]"), up=orow&&orow.querySelector("[data-offup]");
+      if(dn) dn.disabled = count<=0;
+      if(up) up.disabled = idled<=0; }
     setText(el("mk-"+k), "Mk "+(state.mk[k]||0));
     setHTML(el("rec-"+k), recipeStr(m));
     // status + state (drives the card's coloured edge, throughput bar, and the Problems filter)
@@ -2190,14 +2227,16 @@ function updateUI(){
     const sStarved = count>0 && !sFull && starvedIn;
     const sRun     = count>0 && !sFull && !sStarved && rate[outId]>0.001;
     let st="";
-    if(sFull)         st=`<span class="warn">■ output full</span>`;
-    else if(sStarved) st=`<span class="neg">⚠ starved of inputs</span>`;
-    else if(count>0)  st=`<span class="muted">≈ ${fmt((m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k))}${ITEMS[outId].ic}/s</span>`;
+    const offTxt = idled>0 ? ` <span class="muted">· ${fmt(idled)} off</span>` : "";
+    if(owned>0 && count<=0) st=`<span class="muted">⏸ all ${fmt(owned)} switched off</span>`;
+    else if(sFull)         st=`<span class="warn">■ output full</span>`+offTxt;
+    else if(sStarved) st=`<span class="neg">⚠ starved of inputs</span>`+offTxt;
+    else if(count>0)  st=`<span class="muted">≈ ${fmt((m.out[outId]||0)*count*m.rate*globalRate()*mkMult(k))}${ITEMS[outId].ic}/s</span>`+offTxt;
     setHTML(el("st-"+k), st);
     const mc=el("mc-"+k);
     if(sFull || sStarved) probCount++;
     mc.classList.toggle("run", sRun); mc.classList.toggle("full", sFull); mc.classList.toggle("starv", sStarved);
-    const fill = count>0 ? Math.min(1,(state.items[outId]||0)/capOf(outId)) : 0;   // output-buffer fill: full=backed up, low=flowing
+    const fill = owned>0 ? Math.min(1,(state.items[outId]||0)/capOf(outId)) : 0;   // output-buffer fill: full=backed up, low=flowing (shown even when idled)
     const tf=el("tfill-"+k); tf.style.width=Math.round(fill*100)+"%";
     tf.style.background = sFull?"var(--warn)":sStarved?"var(--bad)":"var(--good)";
     // machine filter: All / Running / Idle / ⚠ Problems
@@ -2288,7 +2327,7 @@ function updateUI(){
   if(autoOn){ at.classList.toggle("can",state.autoOn); at.innerHTML=`🤖 Auto-Build: ${state.autoOn?"ON":"OFF"}`; }
   const abt=el("autoBalanceToggle"), showAB=autoOn && (state.maxAge||1)>=4;
   abt.style.display=showAB?"":"none";
-  if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-pilot (Age IV): keeps your WHOLE factory balanced — builds the most-starved machine, funds power, and adds storage. No per-machine flagging needed."; }
+  if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-pilot (Age IV): keeps your WHOLE factory balanced — builds the most-starved machine, idles over-producing lines (freeing their power and inputs), funds power, and adds storage. No per-machine flagging needed."; }
   const oct=el("overclockToggle"), showOC=(state.maxAge||1)>=2;   // Machine-age signature
   oct.style.display=showOC?"":"none";
   if(showOC){ oct.classList.toggle("can",state.overclock); oct.innerHTML=`⚡ Overclock: ${state.overclock?"ON":"OFF"}`;
@@ -2455,6 +2494,18 @@ function openFork(){ const c=forkCost(); if((state.items.realityShard||0) < c) r
   toast(`🌀 Reality forked — ${state.forks} parallel ${state.forks===1?'timeline':'timelines'} (×${forkMult().toFixed(2)} production, +${fmt(forkDraw())} MW draw)`, "unlock"); SND.goal(); updateUI(); }
 function collapseForks(n){ n=Math.min(n, state.forks||0); if(n<=0)return;               // emergency valve: close branches to free grid power (no shard refund)
   state.forks-=n; recomputeStats(); toast(`Collapsed ${n} fork${n===1?'':'s'} — grid draw reduced`, ""); updateUI(); }
+// ── Idle / resume machines. n>0 idles, n<0 resumes. Respects the 1/10/Max buy-mode selector. ──
+function idleMachine(key, n){
+  const owned=state.machines[key]||0; if(owned<=0) return;
+  state.off=state.off||{};
+  const cur=Math.min(owned, state.off[key]||0);
+  const next=Math.max(0, Math.min(owned, cur + n));
+  if(next===cur) return;
+  state.off[key]=next;
+  recomputeStats(); updateUI(); SND.build();
+}
+const idleStep = () => buyMode==="max" ? Infinity : (buyMode==="10" ? 10 : 1);
+
 // ── Age IX — inscribe a Law (permanent) and toggle which laws are active (within your slots) ──
 function inscribeLaw(id){
   const l=LAWS.find(x=>x.id===id); if(!l || (state.laws&&state.laws[id])) return;
@@ -2578,6 +2629,7 @@ function migrate(s){
   const out=Object.assign(d,s);
   out.items=Object.assign({},d.items,s.items||{});
   out.machines=Object.assign({},d.machines,s.machines||{});
+  out.off=Object.assign({}, s.off||{});             // idled-machine counts (v0.49.0; absent on older saves = none idled)
   out.mk=Object.assign({},d.mk,s.mk||{});
   out.generators=Object.assign({},d.generators,s.generators||{});
   out.allocated=Object.assign({start:true}, s.allocated||{});
@@ -2786,6 +2838,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.49.0","<b>You can now switch machines off.</b> Every machine card has <b>⏸</b> and <b>▶</b> buttons that idle or resume part of a line — and they respect your <b>1 / 10 / Max</b> selector, so you can park 50 furnaces in one click. Idled machines stop producing, stop eating inputs, and <b>stop drawing grid power</b>, so switching off an over-producing line frees electricity and shared materials for whatever's actually starving. The card shows <b>×active/owned</b> and how many are off. <b>Auto-Balance now uses this to fix over-production too.</b> Before, it could only ever add machines — so if a line flooded its buffer it just sat there burning power while the rest of your factory went hungry. Now it idles backed-up lines automatically and brings them back the moment their buffer drains, and it will <b>resume machines you already own instead of buying duplicates</b>. It never switches off the last machine in a line, and the on/off thresholds are deliberately far apart so nothing flickers."],
   ["0.48.0","<b>Two new ages — the game goes past Transcendence.</b> ⚖️ <b>Age IX, the Causality Age</b>: you stop simulating reality and start authoring it — Axiom Press → Causal Loom → Law Forge, turning Reality Shards into <b>Prime Laws</b>. Ω <b>Age X, the Omega Age</b>: the factory becomes self-existent — Eternity Engine → Self-Cause Loop → Monad Forge. Six new machines, six new materials, and both ages feed on the Age VIII outputs so nothing you already built goes idle. Each age gets its own signature, and neither is just 'more of a number': <b>⚖️ Axiomatic Law</b> — spend Prime Laws to <b>inscribe</b> the rules your reality obeys (Abundance, Scarcity, Momentum, Entropy, Symmetry, Recursion), then choose which are <b>in force</b>. You only get a few slots, and every law is a big rule with a real drawback — +150% production but half sale value, +200% sales but half storage, and so on. There's no best set; it's a build you re-tune for what you're chasing. <b>Ω Temporal Binding</b> — bind Monads to accelerate <b>time itself</b>, up to 3×. Everything runs faster: production, consumption, fuel, contracts, Talent Points. It's genuinely more time, not free output — your inputs drain faster too. Both are permanent through Restructure and collapse only when you Ascend. Mastering Age X is now the summit that fires the completion celebration."],
   ["0.47.0","A balance pass driven by the full-game simulator — and it turned up a real bug. <b>Fixed: every era used to start in a brown-out.</b> Ascending seeded you a big head-start factory but <b>no generators</b> — and since generators cost materials (not Credits) and a reset empties your stores, you'd sit on millions of Credits at ~20% power waiting for a throttled factory to make 20 iron plates. The head-start now comes with <b>enough solar to actually run what it gives you</b>. <b>Rebalanced: Dark Matter was 10–20× out of reach.</b> A ~12h era paid only 2–3 🌑 while a handful of upgrade levels cost 45–150, so the whole Ascension layer was unaffordable and your power never compounded between eras — the sim showed production sitting flat at ~8× across <i>eleven</i> eras. Ascending now pays <b>about double</b>, and the permanent-power upgrades are cheaper (Dark Star, Cosmic Grid, Void Market, Paradox Engine). In the sim this turns a flat line into a real staircase: production now climbs <b>3× → 17×</b> across eras, Age VIII's Dark Matter gate is reachable around <b>era 8</b> instead of never, and you finally push into Age VII. Era length is unchanged — this buys <b>progression</b>, not a speed-up."],
   ["0.46.1","Fixed: after filing a Patent, the Items panel showed only the 3 starting items even though your machines were unlocked. If you owned <b>Standing Claim</b>, its pre-unlocked machines were skipped by the routine that reveals items — so the whole materials list stayed hidden. Every path that unlocks a machine now reveals the items it uses and makes, and there's a test guarding it."],
@@ -2865,6 +2918,9 @@ function wire(){
   press(el("machines"),e=>{
     const h=e.target.closest(".tier-h[data-age]"); if(h){ const ag=+h.dataset.age; ageCollapsed[ag]=!ageCollapsed[ag]; updateUI(); return; }   // collapse/expand an age group
     const a=e.target.closest("[data-auto]"),b=e.target.closest("[data-buy]"),m=e.target.closest("[data-mk]");
+    const od=e.target.closest("[data-offdn]"), ou=e.target.closest("[data-offup]");
+    if(od){ idleMachine(od.dataset.offdn,  idleStep()); return; }    // ⏸ switch some OFF (1/10/Max per the buy-mode selector)
+    if(ou){ idleMachine(ou.dataset.offup, -idleStep()); return; }    // ▶ switch some back ON
     if(a){ state.auto[a.dataset.auto]=!state.auto[a.dataset.auto]; updateUI(); }
     else if(b) buildMachine(b.dataset.buy); else if(m) mkMachine(m.dataset.mk); });
   // advancement tree: drag to pan, wheel/buttons to zoom, click to allocate, hover for tooltip

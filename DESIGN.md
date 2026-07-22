@@ -509,6 +509,23 @@ the Ascendant Foundation scaling are the main dials.
 
 ---
 
+### Idled machines (v0.49.0)
+
+`state.off[key]` = how many of a line are switched **OFF**. `activeOf(key) = owned − off` is what actually
+runs: idled machines don't produce, don't consume inputs, and — the load-bearing part — **draw no grid
+power** (`computePower` sums `activeOf`, not owned). So idling an over-producing line hands its electricity
+*and* its share of contested inputs to whatever is starving. Player controls are ⏸/▶ on each machine card,
+honouring the 1/10/Max buy-mode selector; the card reads `×active/owned`. Per-run (cleared by `freshRun`);
+saves predating the feature migrate to "nothing idled".
+
+**Why it exists:** Auto-Balance could only ever *add* machines, so it could fix under-production and nothing
+else — a line that flooded its buffer just sat there burning power while the rest of the factory went hungry.
+Auto-Balance now has a **throttle pass** (step 1b) that idles lines whose output buffer is `>0.97` full and
+restores them below `0.60`. That gap is deliberate **hysteresis**: `autoBuild` runs every 300ms, so steps are
+small (5%) and the wide band stops a line flapping around a single trip point. It never idles the last
+machine, and the build pass **skips lines that have idled capacity** so it resumes what you already own
+instead of buying duplicates.
+
 ## 13. Systems
 
 - **Tick:** 100 ms, real wall-clock delta (clamped 5 s/tick; big gaps → offline calc).
@@ -610,7 +627,7 @@ the Factory tab, with an **age banner** up top.
 | I · Stone & Iron | Extraction + Smelting | **Prospecting** — mine to strike Rich Veins (raw-extraction surge) |
 | II · Machine | Basic Components | **Overclock** — +50% speed for +50% input (speed vs efficiency) |
 | III · Industrial | Advanced Components | the Power grid + **Accumulators** (Phase 2) |
-| IV · Automation | Complex Assemblies | the Auto-Builder + **Auto-Balance** (Phase 2) |
+| IV · Automation | Complex Assemblies | the Auto-Builder + **Auto-Balance** (Phase 2) — builds the most-starved line, **idles over-producing ones**, funds power, adds storage |
 | V · Robotic | Robotics | **Workforce** — deploy Robots as workers (Phase 2) |
 | VI · Space | Singularity Tech | **Von Neumann Fleet** — launch Probes → a self-replicating idle engine (+ infinite Patents) |
 | VII · Interstellar | Interstellar Tech | Star Scoop → Hydrogen → **Antimatter** → **Dyson Panels**; signature **Dyson Swarm** — deploy panels → permanent free grid power (× generator tech) |

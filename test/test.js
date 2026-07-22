@@ -232,6 +232,68 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("file patent: patents grew", E.state.patents > keptPatents);
 })();
 
+// ---------------------------------------------------------------- idled machines (v0.49.0)
+(() => {
+  fresh();
+  E.state.unlocked.miner = true; E.state.machines.miner = 10; E.recomputeStats();
+  eq("all machines active by default", E.activeOf("miner"), 10);
+  eq("none idled by default", E.idleOf("miner"), 0);
+
+  E.computePower(0.001); const demandAll = E.lastPower.demand;
+  E.state.items.ironOre = 0; E.simulate(1, 1); const outAll = E.state.items.ironOre;
+
+  E.idleMachine("miner", 6);
+  eq("idling reduces the active count", E.activeOf("miner"), 4);
+  eq("owned count is untouched by idling", E.state.machines.miner, 10);
+  E.computePower(0.001);
+  near("idled machines draw NO grid power", E.lastPower.demand, demandAll * 0.4);
+  E.state.items.ironOre = 0; E.simulate(1, 1);
+  near("idled machines produce nothing", E.state.items.ironOre, outAll * 0.4);
+
+  E.idleMachine("miner", -6);
+  eq("resuming restores the active count", E.activeOf("miner"), 10);
+
+  E.idleMachine("miner", 999); eq("over-idling clamps to owned", E.idleOf("miner"), 10);
+  eq("a fully idled line produces nothing", (() => { E.state.items.ironOre = 0; E.simulate(1, 1); return E.state.items.ironOre; })(), 0);
+  E.idleMachine("miner", -999); eq("over-resuming clamps to zero", E.idleOf("miner"), 0);
+
+  // idled counts are per-run: a reset wipes them along with the factory
+  E.idleMachine("miner", 5); E.freshRun(E.state);
+  eq("freshRun clears idled counts", E.idleOf("miner"), 0);
+  // saves from before this feature simply have nothing idled
+  const legacy = E.defaultState(); delete legacy.off;
+  const lg = E.migrate(legacy);
+  ok("legacy saves migrate with no machines idled", lg.off && Object.keys(lg.off).length === 0);
+})();
+
+// ---------------------------------------------------------------- Auto-Balance corrects BOTH directions
+(() => {
+  fresh();
+  E.state.allocated["eng_1_s0"] = true;          // Auto-Builder node (Auto-Balance requires it)
+  E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4;
+  E.state.unlocked.miner = true; E.state.machines.miner = 40;
+  E.recomputeStats();
+
+  E.state.items.ironOre = E.capOf("ironOre");     // over-production: output buffer pinned at cap
+  for (let i = 0; i < 40; i++) E.autoBuild();
+  ok("Auto-Balance idles an over-producing line", E.idleOf("miner") > 0);
+  ok("...but never idles the last machine", E.activeOf("miner") >= 1);
+  E.computePower(0.001);
+  ok("throttling frees grid power", E.lastPower.demand < 40);
+
+  E.state.items.ironOre = 0;                      // under-production: buffer drained
+  for (let i = 0; i < 60; i++) E.autoBuild();
+  eq("Auto-Balance restores capacity when the buffer drains", E.activeOf("miner"), 40);
+
+  // it must resume idled capacity rather than buy duplicates it already owns
+  E.state.items.ironOre = E.capOf("ironOre");
+  for (let i = 0; i < 20; i++) E.autoBuild();
+  const owned = E.state.machines.miner;
+  E.state.items.ironOre = 0; E.state.credits = 1e12;
+  for (let i = 0; i < 5; i++) E.autoBuild();
+  ok("Auto-Balance resumes idled machines instead of buying more", E.state.machines.miner === owned);
+})();
+
 // ---------------------------------------------------------------- Age IX: Axiomatic Law (loadout signature)
 (() => {
   fresh();
