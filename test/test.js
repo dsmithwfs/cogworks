@@ -208,6 +208,16 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("Standing Claim does NOT bypass a Blueprint age gate",
     E.MORDER.filter((k) => E.MACHINES[k].t >= 4).every((k) => !E.state.unlocked[k]));
 
+  // REGRESSION (v0.46.1): pre-unlocking machines used to skip refreshUnlocks' item-reveal side effect,
+  // so a Patent reset left the Items panel showing only the 3 starters while 20 machines were unlocked.
+  fresh(); E.state.stats.bpEarned = 500; E.state.patentUpg = { standing: 3 };
+  E.state.allocated = { start: true }; E.freshRun(E.state); E.refreshUnlocks(true);
+  ok("every unlocked machine reveals its input/output items", E.MORDER.filter((k) => E.state.unlocked[k])
+    .every((k) => Object.keys(E.MACHINES[k].in || {}).concat(Object.keys(E.MACHINES[k].out || {}))
+      .every((r) => E.itemUnlocked(r))));
+  ok("Patent reset shows far more than the 3 starting items",
+    Object.keys(E.ITEMS).filter((id) => E.itemUnlocked(id)).length > 10);
+
   // File Patent effect (replicated): wipes blueprints/tree, keeps patents/talents/patentUpg
   fresh();
   E.state.blueprints = 40; E.state.allocated = { start: true, ind_1: true }; E.state.talents = { extract: 3 };

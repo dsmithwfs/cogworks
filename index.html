@@ -539,7 +539,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.46.0";
+const VERSION = "0.46.1";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -1043,7 +1043,7 @@ function freshRun(s){
   const sc = pu.standing||0;
   if(sc>0) for(const key of MORDER){ const t=MACHINES[key].t, ag=TIER_AGE[t];
     // gated deliberately: this only spares you re-earning the build-prerequisite chain, it NEVER bypasses an age gate
-    if(t<=sc && sbp>=AGE_REQ[ag] && sdm>=(AGE_DM[ag]||0)) s.unlocked[key]=true; }
+    if(t<=sc && sbp>=AGE_REQ[ag] && sdm>=(AGE_DM[ag]||0)){ s.unlocked[key]=true; unlockMachineItems(s, key); } }
   if(pu.chartered) s.warehouses += 3*pu.chartered;
   if(pu.franchise) s.markets    += pu.franchise;
   if(pu.vault)     s.credits    += 2500*Math.pow(4, pu.vault-1);
@@ -1245,11 +1245,18 @@ function pay(cr, bom){ state.credits-=cr; for(const r in (bom||{})) state.items[
    UNLOCKS (progressive tech path)
    ========================================================================= */
 const ageUnlocked = age => (state.stats.bpEarned||0) >= AGE_REQ[age] && (state.stats.dmEarned||0) >= (AGE_DM[age]||0);   // Blueprint-gated + (top age) Dark-Matter-gated for cross-era progression
+// Unlocking a machine must ALWAYS reveal the items it consumes and produces. This lived inline in
+// refreshUnlocks() only — but that loop `continue`s on already-unlocked machines, so any code path that
+// pre-marks a machine unlocked (Patent "Standing Claim", or the no-prereq branch below) skipped the item
+// reveal entirely and left the Items panel showing just the 3 starters. Shared so every path stays honest.
+function unlockMachineItems(s, key){ const m=MACHINES[key];
+  for(const r in m.in)  s.unlocked["item:"+r]=true;
+  for(const r in m.out) s.unlocked["item:"+r]=true; }
 function machineUnlocked(key){
   if(state.unlocked[key]) return true;
   if(!ageUnlocked(TIER_AGE[MACHINES[key].t])) return false;   // hard age-gate (must prestige)
   const req = MACHINES[key].unlock;
-  if(!req) { state.unlocked[key]=true; return true; }
+  if(!req) { state.unlocked[key]=true; unlockMachineItems(state,key); return true; }
   for(const m in req) if((state.machines[m]||0) < req[m]) return false;
   return true;
 }
@@ -1263,8 +1270,7 @@ function refreshUnlocks(silent){
     if(ok){
       state.unlocked[key]=true;
       const m=MACHINES[key];
-      for(const r in m.in) state.unlocked["item:"+r]=true;
-      for(const r in m.out) state.unlocked["item:"+r]=true;
+      unlockMachineItems(state, key);
       if(!silent){ toast(`🔓 Unlocked: ${m.n}`, "unlock"); SND.unlock(); }
       structureDirty=true;
     }
@@ -2621,6 +2627,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.46.1","Fixed: after filing a Patent, the Items panel showed only the 3 starting items even though your machines were unlocked. If you owned <b>Standing Claim</b>, its pre-unlocked machines were skipped by the routine that reveals items — so the whole materials list stayed hidden. Every path that unlocks a machine now reveals the items it uses and makes, and there's a test guarding it."],
   ["0.46.0","<b>Patents are completely redesigned.</b> You could play the whole game without ever filing one — and you were right to: filing wiped your Blueprints <i>and</i> your entire Advancement tree, and all you got back was a shop selling '+25% production' and '+50% storage'. That's exactly what the tree already sells, but cheaper. The layer had nothing of its own. So Patents no longer sell bonuses at all. <b>Patents now buy permanence.</b> Everything you patent is <b>grandfathered into every future run</b>, so each re-climb rebuilds less: 🌳 <b>Prior Art</b> — start every run with the first N rings of all six tree arms already allocated; 🔒 <b>Grandfathered Tooling</b> — every machine line starts at Mk N; 📜 <b>Standing Claim</b> — machines up to tier N start unlocked, so you never re-earn the build-prerequisite chain again (it will never skip an age gate); 🏭 <b>Chartered Works</b> — start with Warehouses; 🏪 <b>Franchise Rights</b> — start with Trade Terminals; 💰 <b>Reserve Vault</b> — start with Credits in the bank. A mid-game spread now starts a fresh run at <b>1.7× production, 3.3× storage, 18 free tree nodes, Mk2 across the board and the early chain already unlocked</b> — so filing is something you <i>want</i> to do, and it makes every Restructure and every Ascension re-climb shorter from then on."],
   ["0.45.0","Tuning pass on progression depth from playtest notes. (1) <b>The tree earns power later.</b> The first two rings of every arm gave big boosts too cheaply — those are trimmed, so early play is about <i>enabling</i> your factory rather than instantly snowballing it. (2) <b>Automation comes early:</b> the <b>Auto-Builder is now a first-ring Engineering node</b> you can grab right away, so hands-off building is an early convenience, not a mid-game reward. (3) <b>Talents run much deeper</b> — most talents gained ~50–100% more ranks, two new talents were added (Bulk Purchasing, Nanotooling), the efficiency caps were raised so those extra ranks keep paying off, and the higher tiers unlock over a longer investment. No more maxing the whole talent board in an afternoon. (4) <b>Ascension is a real power layer now.</b> Dark Matter used to only buy automations that played the game <i>for</i> you — the decisions you actually enjoy. Now it buys <b>permanent power that carries across every era</b>: ⭐ Dark Star (global production), 🌌 Cosmic Grid (power + grid), 💠 Void Market (sales + contracts), plus the returning Genesis Cache and Paradox Engine — all repeatable, the endless sink. The automations are still there, but they're now an <b>optional</b> section you switch on only if you want to idle a loop. <b>Your tree was refunded</b> again for the layout change."],
   ["0.44.0","Two big reworks from playtest feedback. (1) The Advancement tree is <b>rebuilt from scratch</b>: gone are the ~300 repetitive '+x% this' nodes, replaced by ~76 hand-crafted ones where about half do something distinctive — synergies that scale with how you play, rule-changing mechanics, tradeoffs, and chunky stat jumps that each actually move the needle. Every arm is a focused, themed path to a keystone. <b>Your tree was refunded</b> so you can re-plan freely in the new layout. (2) <b>Ore Veins are now evergreen.</b> Prospecting used to die the moment you automated; now the charge meter fills on its own from your raw output (and faster if you mine by hand), and striking a vein surges your <b>whole factory's</b> production, not just raw ore. New: <b>Depth</b> — each strike digs deeper, and deeper veins are bigger (Surface Seam → Rich Vein → Deep Lode → 🌋 Mother Lode). Idle play sustains the small ones; active mining drives the Mother Lodes. The Engineering arm has new nodes to tune all of it. (Power also got more generous to match the leaner tree — the grid floor now grows each age, and the Power arm's generators scale much harder.)"],
