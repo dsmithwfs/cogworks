@@ -311,6 +311,16 @@
         <button class="b mk" id="autoBalanceToggle" style="display:none;max-width:210px"></button>
         <button class="b mk" id="overclockToggle" style="display:none;max-width:200px"></button>
       </div>
+      <div class="toolrow" id="reserveRow" style="display:none;margin-top:7px;align-items:center;gap:8px">
+        <span style="font-size:12px" title="Auto-Build will never spend below this — your manual purchases are never blocked">🏦 Keep in reserve</span>
+        <button class="b" data-res="0"   style="max-width:56px">Off</button>
+        <button class="b" data-res="1e4" style="max-width:56px">10K</button>
+        <button class="b" data-res="1e5" style="max-width:60px">100K</button>
+        <button class="b" data-res="1e6" style="max-width:56px">1M</button>
+        <button class="b" data-res="1e8" style="max-width:60px">100M</button>
+        <button class="b" data-res="1e10"style="max-width:56px">10B</button>
+        <span class="muted" style="font-size:12px" id="reserveHint"></span>
+      </div>
       <div class="toolrow" id="prospectRow" style="margin-top:7px;align-items:center;gap:8px">
         <span style="font-size:12px" title="Age I signature — Prospecting">🪨 Prospect</span>
         <div class="bar" id="prospectBar" style="flex:0 0 150px;height:8px"></div>
@@ -559,7 +569,7 @@
 
 <script>
 "use strict";
-const VERSION = "0.49.0";
+const VERSION = "0.50.0";
 const SAVE_KEY = "cogworks_save_v2";
 const PRESTIGE_SCALE = 1e4;
 
@@ -1133,7 +1143,7 @@ function defaultState(){
   const s = {version:VERSION, lastSaved:Date.now(), blueprints:0, lifetimeCredits:0, prestiges:0,
     allocated:{start:true}, milestones:{}, ageGoals:{}, stats:{built:0, bpEarned:0, allocs:0, produced:0, made:{}, dmEarned:0, playSec:0},
     completedAt:0, notation:"compact", treeVersion:TREE_VERSION,
-    auto:{}, off:{}, autoOn:true, autoBalance:false, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
+    auto:{}, off:{}, autoOn:true, autoBalance:false, autoReserve:0, overclock:false, talentPoints:0, talents:{}, tpClaimed:0,
     patents:0, patentUpg:{}, bpCycle:0, age:1, maxAge:1, sound:true, hud:false,
     fleet:0, launched:0,   // Space-age Von Neumann Fleet — PERMANENT (survives Restructure); the endgame idle engine
     laws:{}, lawOn:{}, bound:0,   // Age IX Axiomatic Law (inscribed + active) and Age X Temporal Binding — permanent through Restructure
@@ -1344,6 +1354,12 @@ function canAfford(cr, bom){
   return true;
 }
 function pay(cr, bom){ state.credits-=cr; for(const r in (bom||{})) state.items[r]-=bom[r]; }
+// AUTO-BUILD CREDIT RESERVE (v0.50.0). Automation must leave this much in the bank, so it can't spend the
+// Credits you're saving for a Mk upgrade, a Warehouse, or the next tier's big-ticket machine. Only the
+// AUTOMATED paths use this — buying by hand is never blocked, since that's your explicit decision.
+const autoReserve  = () => Math.max(0, state.autoReserve||0);
+const autoSpendable= () => Math.max(0, state.credits - autoReserve());
+const autoAfford   = (cr, bom) => (state.credits - cr) >= autoReserve() && canAfford(cr, bom);
 
 /* =========================================================================
    UNLOCKS (progressive tech path)
@@ -1487,7 +1503,7 @@ function autoBuild(){
     // Auto-pilot (Age IV): keep the WHOLE factory balanced — no per-machine flagging needed.
     // 1. Power: fund generators whenever the grid can't keep up (fuel-free preferred).
     if(lastPower.ratio<0.999){ for(let i=0;i<20;i++){ let bg=null,bs=-1,bpp=null,bbom=null;
-      for(const g of GORDER){ if(!genUnlocked(g)) continue; const p=planGenerator(g,1); if(p.n<=0) continue; const bom=scaleBOM(GENERATORS[g].build.bom,p.n); if(!canAfford(p.cost,bom)) continue;
+      for(const g of GORDER){ if(!genUnlocked(g)) continue; const p=planGenerator(g,1); if(p.n<=0) continue; const bom=scaleBOM(GENERATORS[g].build.bom,p.n); if(!autoAfford(p.cost,bom)) continue;
         const sc=GENERATORS[g].power*(GENERATORS[g].fuel?1:10); if(sc>bs){ bs=sc; bg=g; bpp=p; bbom=bom; } }
       if(!bg) break; pay(bpp.cost,bbom); state.generators[bg]+=bpp.n; changed=true; } }
     // 1b. THROTTLE (v0.49.0): building alone can only fix under-production. A line whose output is backed up
@@ -1516,7 +1532,7 @@ function autoBuild(){
       let best=null,bestFill=Infinity,bestP=null,bestBom=null;
       for(const k of MORDER){ if(!state.unlocked[k]) continue;
         if(idleOf(k)>0) continue;   // never BUY capacity for a line that already has idled machines — resume those first (step 1b)
-        const p=planMachine(k,1); if(p.n<=0) continue; const bom=scaleBOM(buildBOM(k),p.n); if(!canAfford(p.cost,bom)) continue;
+        const p=planMachine(k,1); if(p.n<=0) continue; const bom=scaleBOM(buildBOM(k),p.n); if(!autoAfford(p.cost,bom)) continue;
         const out=Object.keys(MACHINES[k].out)[0]; const fill=(state.items[out]||0)/capOf(out);
         if(fill<bestFill){ bestFill=fill; best=k; bestP=p; bestBom=bom; } }
       if(!best) break;
@@ -1524,15 +1540,15 @@ function autoBuild(){
     }
     // 3. Storage: add a warehouse when any buffer caps, so the faster chain doesn't back up on itself.
     for(const id in ITEMS){ if(itemUnlocked(id) && (state.items[id]||0)>=capOf(id)-1e-6){
-      const p=planWarehouse(1); if(p.n>0){ const bom=scaleBOM(WAREHOUSE.bom,p.n); if(canAfford(p.cost,bom)){ pay(p.cost,bom); state.warehouses+=p.n; changed=true; } } break; } }
+      const p=planWarehouse(1); if(p.n>0){ const bom=scaleBOM(WAREHOUSE.bom,p.n); if(autoAfford(p.cost,bom)){ pay(p.cost,bom); state.warehouses+=p.n; changed=true; } } break; } }
   } else {
     for(const k of MORDER){ if(state.auto[k] && state.unlocked[k]){
       const p=planMachine(k,1); if(p.n>0){ const bom=scaleBOM(buildBOM(k),p.n);
-        if(canAfford(p.cost,bom)){ pay(p.cost,bom); state.machines[k]+=p.n; state.stats.built+=p.n; changed=true; } } } }
+        if(autoAfford(p.cost,bom)){ pay(p.cost,bom); state.machines[k]+=p.n; state.stats.built+=p.n; changed=true; } } } }
   }
   for(const k of GORDER){ if(state.auto["gen:"+k] && genUnlocked(k)){
     const p=planGenerator(k,1); if(p.n>0){ const bom=scaleBOM(GENERATORS[k].build.bom,p.n);
-      if(canAfford(p.cost,bom)){ pay(p.cost,bom); state.generators[k]+=p.n; state.stats.built+=p.n; changed=true; } } } }
+      if(autoAfford(p.cost,bom)){ pay(p.cost,bom); state.generators[k]+=p.n; state.stats.built+=p.n; changed=true; } } } }
   if(changed) refreshUnlocks(false);
 }
 function checkMilestones(){
@@ -2328,6 +2344,14 @@ function updateUI(){
   const abt=el("autoBalanceToggle"), showAB=autoOn && (state.maxAge||1)>=4;
   abt.style.display=showAB?"":"none";
   if(showAB){ abt.classList.toggle("can",state.autoBalance); abt.innerHTML=`⚖ Auto-Balance: ${state.autoBalance?"ON":"OFF"}`; abt.title="Auto-pilot (Age IV): keeps your WHOLE factory balanced — builds the most-starved machine, idles over-producing lines (freeing their power and inputs), funds power, and adds storage. No per-machine flagging needed."; }
+  // Auto-Build credit reserve (v0.50.0) — only meaningful once Auto-Build exists
+  { const rr=el("reserveRow"); rr.style.display=autoOn?"":"none";
+    if(autoOn){ const res=autoReserve();
+      setHTML(el("reserveHint"), res>0
+        ? `Auto-Build stops at <b>${money(res)}</b> · <b>${money(autoSpendable())}</b> free to spend`
+        : `Auto-Build may spend everything — set a floor to save up for Mk upgrades &amp; big machines`);
+      for(const b of rr.querySelectorAll("[data-res]")){ const v=+b.dataset.res; b.classList.toggle("can", Math.abs(v-res)<1e-9); }
+    } }
   const oct=el("overclockToggle"), showOC=(state.maxAge||1)>=2;   // Machine-age signature
   oct.style.display=showOC?"":"none";
   if(showOC){ oct.classList.toggle("can",state.overclock); oct.innerHTML=`⚡ Overclock: ${state.overclock?"ON":"OFF"}`;
@@ -2650,6 +2674,7 @@ function migrate(s){
   out.auto=Object.assign({}, s.auto||{});
   out.autoOn = (typeof s.autoOn==="boolean") ? s.autoOn : true;
   out.autoBalance = !!s.autoBalance;
+  out.autoReserve = Math.max(0, +s.autoReserve||0);   // Auto-Build credit floor (v0.50.0; absent on older saves = 0)
   out.overclock = !!s.overclock;
   out.sound = (typeof s.sound==="boolean") ? s.sound : true;
   out.hud = !!s.hud;
@@ -2838,6 +2863,7 @@ function currentObjective(){
 }
 
 const CHANGELOG=[
+  ["0.50.0","<b>Auto-Build can now be told to leave money in the bank.</b> A new <b>🏦 Keep in reserve</b> row sits under the Manual panel — pick a floor (Off / 10K / 100K / 1M / 100M / 10B) and automation will never spend below it. Before, Auto-Build and Auto-Balance would happily drain you to nearly zero buying more machines, so saving up for a Mk upgrade, a Warehouse or the next tier's big-ticket machine meant switching automation off entirely. Now you just set a floor and let it run. It applies to <b>every</b> automated purchase — machines, generators, warehouses and the Auto-Balance auto-pilot — and the row shows how much is currently free to spend. <b>Your own manual purchases are never blocked</b>: the reserve only restrains automation, because spending your last Credit is your call to make."],
   ["0.49.0","<b>You can now switch machines off.</b> Every machine card has <b>⏸</b> and <b>▶</b> buttons that idle or resume part of a line — and they respect your <b>1 / 10 / Max</b> selector, so you can park 50 furnaces in one click. Idled machines stop producing, stop eating inputs, and <b>stop drawing grid power</b>, so switching off an over-producing line frees electricity and shared materials for whatever's actually starving. The card shows <b>×active/owned</b> and how many are off. <b>Auto-Balance now uses this to fix over-production too.</b> Before, it could only ever add machines — so if a line flooded its buffer it just sat there burning power while the rest of your factory went hungry. Now it idles backed-up lines automatically and brings them back the moment their buffer drains, and it will <b>resume machines you already own instead of buying duplicates</b>. It never switches off the last machine in a line, and the on/off thresholds are deliberately far apart so nothing flickers."],
   ["0.48.0","<b>Two new ages — the game goes past Transcendence.</b> ⚖️ <b>Age IX, the Causality Age</b>: you stop simulating reality and start authoring it — Axiom Press → Causal Loom → Law Forge, turning Reality Shards into <b>Prime Laws</b>. Ω <b>Age X, the Omega Age</b>: the factory becomes self-existent — Eternity Engine → Self-Cause Loop → Monad Forge. Six new machines, six new materials, and both ages feed on the Age VIII outputs so nothing you already built goes idle. Each age gets its own signature, and neither is just 'more of a number': <b>⚖️ Axiomatic Law</b> — spend Prime Laws to <b>inscribe</b> the rules your reality obeys (Abundance, Scarcity, Momentum, Entropy, Symmetry, Recursion), then choose which are <b>in force</b>. You only get a few slots, and every law is a big rule with a real drawback — +150% production but half sale value, +200% sales but half storage, and so on. There's no best set; it's a build you re-tune for what you're chasing. <b>Ω Temporal Binding</b> — bind Monads to accelerate <b>time itself</b>, up to 3×. Everything runs faster: production, consumption, fuel, contracts, Talent Points. It's genuinely more time, not free output — your inputs drain faster too. Both are permanent through Restructure and collapse only when you Ascend. Mastering Age X is now the summit that fires the completion celebration."],
   ["0.47.0","A balance pass driven by the full-game simulator — and it turned up a real bug. <b>Fixed: every era used to start in a brown-out.</b> Ascending seeded you a big head-start factory but <b>no generators</b> — and since generators cost materials (not Credits) and a reset empties your stores, you'd sit on millions of Credits at ~20% power waiting for a throttled factory to make 20 iron plates. The head-start now comes with <b>enough solar to actually run what it gives you</b>. <b>Rebalanced: Dark Matter was 10–20× out of reach.</b> A ~12h era paid only 2–3 🌑 while a handful of upgrade levels cost 45–150, so the whole Ascension layer was unaffordable and your power never compounded between eras — the sim showed production sitting flat at ~8× across <i>eleven</i> eras. Ascending now pays <b>about double</b>, and the permanent-power upgrades are cheaper (Dark Star, Cosmic Grid, Void Market, Paradox Engine). In the sim this turns a flat line into a real staircase: production now climbs <b>3× → 17×</b> across eras, Age VIII's Dark Matter gate is reachable around <b>era 8</b> instead of never, and you finally push into Age VII. Era length is unchanged — this buys <b>progression</b>, not a speed-up."],
@@ -2988,6 +3014,8 @@ function wire(){
     else if(b) buildGenerator(b.dataset.gen); });
   el("autoToggle").addEventListener("click",()=>{ state.autoOn=!state.autoOn; updateUI(); });
   el("autoBalanceToggle").addEventListener("click",()=>{ state.autoBalance=!state.autoBalance; updateUI(); });
+  press(el("reserveRow"), e=>{ const b=e.target.closest("[data-res]"); if(!b) return;
+    state.autoReserve=Math.max(0,+b.dataset.res||0); updateUI(); SND.build(); });
   el("overclockToggle").addEventListener("click",()=>{ state.overclock=!state.overclock; updateUI(); });
   el("wfDeploy1").addEventListener("click",()=>deployRobots(1));
   el("wfDeploy10").addEventListener("click",()=>deployRobots(10));

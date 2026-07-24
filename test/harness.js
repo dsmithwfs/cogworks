@@ -49,7 +49,7 @@ const EXPORTS = [
   "DYSON_MW", "dysonPower", "deployDyson",
   "FORK_GAIN", "FORK_MW", "FORK_SHARD", "forkMult", "forkDraw", "forkCost", "openFork", "collapseForks",
   // Idled machines (v0.49.0)
-  "activeOf", "idleOf", "idleMachine",
+  "activeOf", "idleOf", "idleMachine", "autoReserve", "autoSpendable", "autoAfford",
   // Age IX Axiomatic Law + Age X Temporal Binding
   "LAWS", "LAW_BASE_COST", "lawsInscribed", "lawCost", "lawSlots", "lawsActive", "inscribeLaw", "toggleLaw",
   "TIME_PER_MONAD", "TIME_MAX", "timeMult", "monadCost", "bindMonad",

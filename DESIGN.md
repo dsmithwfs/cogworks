@@ -509,6 +509,19 @@ the Ascendant Foundation scaling are the main dials.
 
 ---
 
+### Auto-Build credit reserve (v0.50.0)
+
+`state.autoReserve` is a Credit floor automation may not spend below. `autoAfford(cr, bom)` =
+`canAfford(cr, bom) && (credits − cr) >= autoReserve()`, and **every** purchase inside `autoBuild()` routes
+through it (machines, generators, warehouses, and all three Auto-Balance steps). `canAfford` itself is
+untouched, so **manual purchases are never gated** — spending your last Credit is the player's decision;
+only automation is restrained. Presets Off/10K/100K/1M/100M/10B in the Manual panel; `autoSpendable()` drives
+the "free to spend" readout. Absent on older saves ⇒ 0 (unchanged behaviour).
+
+**Why:** Auto-Build would drain you to near-zero buying machines, so saving for a Mk upgrade or the next
+tier's big-ticket machine meant turning automation off entirely — an all-or-nothing choice the player had to
+babysit. A floor turns that into a set-and-forget policy.
+
 ### Idled machines (v0.49.0)
 
 `state.off[key]` = how many of a line are switched **OFF**. `activeOf(key) = owned − off` is what actually

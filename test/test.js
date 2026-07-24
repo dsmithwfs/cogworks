@@ -294,6 +294,55 @@ function fresh() { E.state = E.defaultState(); E.recomputeStats(); return E.stat
   ok("Auto-Balance resumes idled machines instead of buying more", E.state.machines.miner === owned);
 })();
 
+// ---------------------------------------------------------------- Auto-Build credit reserve (v0.50.0)
+(() => {
+  const setup = (credits, reserve) => {
+    fresh();
+    E.state.allocated["eng_1_s0"] = true;             // Auto-Builder node
+    E.state.autoOn = true; E.state.autoBalance = true; E.state.maxAge = 4;
+    E.state.unlocked.miner = true; E.state.machines.miner = 1;
+    E.state.credits = credits; E.state.autoReserve = reserve;
+    E.recomputeStats();
+  };
+
+  fresh();
+  eq("no reserve by default", E.autoReserve(), 0);
+
+  setup(1e6, 0);
+  for (let i = 0; i < 50; i++) E.autoBuild();
+  const spentAll = E.state.credits;
+  ok("with no reserve Auto-Build spends freely", E.state.stats.built > 0 && spentAll < 1e5);
+
+  setup(1e6, 1e5);
+  for (let i = 0; i < 50; i++) E.autoBuild();
+  ok("Auto-Build never spends below the reserve", E.state.credits >= 1e5);
+  ok("...but still builds with the surplus", E.state.stats.built > 0);
+
+  setup(5e4, 1e5);
+  for (let i = 0; i < 50; i++) E.autoBuild();
+  eq("Auto-Build buys nothing while under the reserve", E.state.stats.built, 0);
+  eq("...and leaves the credits untouched", E.state.credits, 5e4);
+
+  // the reserve gates AUTOMATION only — an explicit manual purchase is never blocked
+  setup(5e4, 1e5);
+  const p = E.planMachine("miner", 1);
+  ok("manual purchases ignore the reserve", E.canAfford(p.cost, E.scaleBOM(E.buildBOM("miner"), p.n)));
+
+  // helpers
+  fresh(); E.state.credits = 250; E.state.autoReserve = 100;
+  eq("autoSpendable is credits minus the reserve", E.autoSpendable(), 150);
+  E.state.credits = 50;
+  eq("autoSpendable floors at zero", E.autoSpendable(), 0);
+  E.state.autoReserve = -5;
+  eq("a negative reserve is clamped to zero", E.autoReserve(), 0);
+
+  // persistence
+  const saved = E.defaultState(); saved.autoReserve = 1e6;
+  eq("the reserve survives a reload", E.migrate(saved).autoReserve, 1e6);
+  const legacy = E.defaultState(); delete legacy.autoReserve;
+  eq("legacy saves default to no reserve", E.migrate(legacy).autoReserve, 0);
+})();
+
 // ---------------------------------------------------------------- Age IX: Axiomatic Law (loadout signature)
 (() => {
   fresh();
